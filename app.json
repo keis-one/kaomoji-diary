@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "kaomoji-diary",
+    "name": "今日、〇〇できた？ -Did you ___ today?-",
     "slug": "kaomoji-diary",
     "version": "1.0.0",
+    "scheme": "kaomojiDiary",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -20,6 +21,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-splash-screen"
+    ]
   }
 }
