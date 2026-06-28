@@ -20,7 +20,7 @@ import {
   WEEKDAY_LABELS,
   isDateToday,
 } from '@/utils/date'
-import { DEFAULT_EMOJI_SET } from '@/constants/kaomoji'
+import { DEFAULT_KAOMOJI_SET } from '@/constants/kaomoji'
 import type { KaomojiLevel } from '@/types'
 
 export default function CalendarScreen() {
@@ -66,7 +66,7 @@ export default function CalendarScreen() {
     ? getEntry(selectedDate, activeQuestion.id)
     : undefined
 
-  const emojiSet = DEFAULT_EMOJI_SET
+  const emojiSet = activeQuestion?.kaomojiSet ?? DEFAULT_KAOMOJI_SET
   const { colors } = useTheme()
   const styles = makeStyles(colors)
 
@@ -117,7 +117,9 @@ export default function CalendarScreen() {
                   {dayNum}
                 </Text>
                 {entry && (
-                  <Text style={styles.emoji}>{emojiSet[entry.level]}</Text>
+                  <Text style={styles.emoji} numberOfLines={1} adjustsFontSizeToFit>
+                    {emojiSet[entry.level]}
+                  </Text>
                 )}
               </Pressable>
             )

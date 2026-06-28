@@ -125,7 +125,7 @@ export default function HomeScreen() {
           >
             <Text style={styles.saveBtnText}>
               {settings.language === 'ja'
-                ? (todayEntry ? '更新する' : '記録する')
+                ? (todayEntry ? '編集する' : '記録する')
                 : (todayEntry ? 'Update' : 'Save')}
             </Text>
           </Pressable>

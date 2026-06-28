@@ -35,6 +35,13 @@ export const KaomojiEditor: React.FC<Props> = ({
   const [draft, setDraft] = useState<KaomojiSet>({ ...kaomojiSet })
   const isJa = language === 'ja'
 
+  // モーダルが開くたびに最新の kaomojiSet で draft を初期化
+  React.useEffect(() => {
+    if (visible) {
+      setDraft({ ...kaomojiSet })
+    }
+  }, [visible, kaomojiSet])
+
   const update = (level: KaomojiLevel, value: string) => {
     if ([...value].length > KAOMOJI_MAX_LENGTH) return
     setDraft((prev) => ({ ...prev, [level]: value }))

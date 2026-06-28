@@ -179,11 +179,28 @@ export default function SettingsScreen() {
                 {KAOMOJI_LEVELS.map((lv) => (
                   <Text key={lv} style={styles.kaomojiPreview}>{q.kaomojiSet[lv]}</Text>
                 ))}
-                {settings.isPremium && (
-                  <Pressable style={styles.customizeBtn} onPress={() => setKaomojiEditId(q.id)}>
-                    <Text style={styles.customizeBtnText}>{isJa ? 'カスタム ✏️' : 'Custom ✏️'}</Text>
-                  </Pressable>
-                )}
+                <Pressable
+                  style={[styles.customizeBtn, !settings.isPremium && styles.customizeBtnLocked]}
+                  onPress={() => {
+                    if (!settings.isPremium) {
+                      Alert.alert(
+                        isJa ? '👑 プレミアム限定' : '👑 Premium Feature',
+                        isJa
+                          ? '顔文字カスタムはプレミアム機能です。プレミアムにアップグレードすると、各レベルの顔文字を自由に変更できます。'
+                          : 'Custom kaomoji is a premium feature. Upgrade to premium to freely customize each level.',
+                        [{ text: isJa ? 'OK' : 'OK' }],
+                      )
+                      return
+                    }
+                    setKaomojiEditId(q.id)
+                  }}
+                >
+                  <Text style={[styles.customizeBtnText, !settings.isPremium && styles.customizeBtnTextLocked]}>
+                    {settings.isPremium
+                      ? (isJa ? 'カスタム ✏️' : 'Custom ✏️')
+                      : (isJa ? 'カスタム 🔒' : 'Custom 🔒')}
+                  </Text>
+                </Pressable>
               </View>
 
               {/* リマインダー */}
@@ -351,7 +368,11 @@ const styles = StyleSheet.create({
     paddingVertical: 3, paddingHorizontal: 10,
     borderRadius: 10, borderWidth: 1, borderColor: '#f0c040', backgroundColor: '#fffde7',
   },
+  customizeBtnLocked: {
+    borderColor: '#ccc', backgroundColor: '#f5f5f5',
+  },
   customizeBtnText: { fontSize: 11, color: '#f9a825' },
+  customizeBtnTextLocked: { color: '#aaa' },
   reminderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   reminderLabel: { fontSize: 14, color: '#555' },
   reminderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
