@@ -11,6 +11,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.keisone.kaomojiDiary",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -25,6 +26,13 @@
     "plugins": [
       "expo-router",
       "expo-splash-screen"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "bc4a0712-5b74-4c15-b177-44fb3275952f"
+      }
+    },
+    "owner": "keisone"
   }
 }
