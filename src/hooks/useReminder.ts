@@ -1,25 +1,79 @@
 import { Alert } from 'react-native'
 import { useSettings } from './useSettings'
+import {
+  isNotificationsSupported,
+  requestNotificationPermissions,
+  scheduleReminder,
+  cancelReminder,
+} from '@/utils/notifications'
 
 export const useReminder = () => {
   const { settings, updateQuestion } = useSettings()
   const isJa = settings.language === 'ja'
 
   const toggleReminder = async (questionId: string, enabled: boolean) => {
-    if (enabled) {
+    const question = settings.questions.find((q) => q.id === questionId)
+    if (!question) return
+
+    if (!isNotificationsSupported) {
+      // Web プラットフォームはグレースフルにフォールバック
       Alert.alert(
-        isJa ? 'リマインダー（準備中）' : 'Reminder (Coming Soon)',
+        isJa ? 'リマインダー非対応' : 'Reminder Not Supported',
         isJa
-          ? 'リマインダー機能は現在準備中です。\nアプリの正式リリース版でご利用いただけます。'
-          : 'The reminder feature is coming soon.\nIt will be available in the official app release.',
+          ? 'リマインダーはネイティブアプリのみ対応しています。'
+          : 'Reminders are only supported in the native app.',
       )
       return
     }
-    updateQuestion(questionId, { reminderEnabled: false, notificationId: undefined })
+
+    if (enabled) {
+      // 通知許可を確認
+      const granted = await requestNotificationPermissions()
+      if (!granted) {
+        Alert.alert(
+          isJa ? '通知の許可が必要です' : 'Permission Required',
+          isJa
+            ? '通知を有効にするには、設定アプリから通知の許可を与えてください。'
+            : 'Please allow notifications in your device settings to enable reminders.',
+        )
+        return
+      }
+
+      // 既存の通知をキャンセルしてから再スケジュール
+      if (question.notificationId) {
+        await cancelReminder(question.notificationId)
+      }
+
+      const notificationId = await scheduleReminder(question, settings.language)
+      updateQuestion(questionId, {
+        reminderEnabled: true,
+        notificationId,
+      })
+    } else {
+      // リマインダー OFF — 通知をキャンセル
+      if (question.notificationId) {
+        await cancelReminder(question.notificationId)
+      }
+      updateQuestion(questionId, { reminderEnabled: false, notificationId: undefined })
+    }
   }
 
-  const updateReminderTime = (questionId: string, time: string) => {
+  const updateReminderTime = async (questionId: string, time: string) => {
+    const question = settings.questions.find((q) => q.id === questionId)
+    if (!question) return
+
+    // 時刻を更新
     updateQuestion(questionId, { reminderTime: time })
+
+    // リマインダーが ON の場合は通知を再スケジュール
+    if (question.reminderEnabled && isNotificationsSupported) {
+      if (question.notificationId) {
+        await cancelReminder(question.notificationId)
+      }
+      const updatedQuestion = { ...question, reminderTime: time }
+      const notificationId = await scheduleReminder(updatedQuestion, settings.language)
+      updateQuestion(questionId, { notificationId })
+    }
   }
 
   return { toggleReminder, updateReminderTime }

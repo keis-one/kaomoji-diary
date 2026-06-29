@@ -11,6 +11,7 @@ import {
   PREMIUM_QUESTION_LIMIT,
 } from '@/constants/app'
 import { todayIso } from '@/utils/date'
+import { cancelAllReminders, cancelReminder } from '@/utils/notifications'
 
 const storage =
   Platform.OS === 'web'
@@ -88,6 +89,11 @@ export const useDiaryStore = create<DiaryStore>()(
       },
 
       removeQuestion: (id) => {
+        // 削除対象の通知をキャンセル
+        const targetQuestion = get().settings.questions.find((q) => q.id === id)
+        if (targetQuestion?.notificationId) {
+          cancelReminder(targetQuestion.notificationId).catch(() => {})
+        }
         set((state) => {
           const questions = state.settings.questions.filter((q) => q.id !== id)
           const activeQuestionId =
@@ -119,8 +125,10 @@ export const useDiaryStore = create<DiaryStore>()(
         }))
       },
 
-      resetAll: () =>
-        set({ entries: [], settings: { ...DEFAULT_SETTINGS }, isOnboardingDone: false }),
+      resetAll: () => {
+        cancelAllReminders().catch(() => {})
+        set({ entries: [], settings: { ...DEFAULT_SETTINGS }, isOnboardingDone: false })
+      },
     }),
     {
       name: STORAGE_KEYS.DIARY_ENTRIES,

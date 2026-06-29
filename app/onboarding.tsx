@@ -11,6 +11,12 @@ import {
 } from 'react-native'
 import { router } from 'expo-router'
 import { useSettings } from '@/hooks/useSettings'
+import {
+  isNotificationsSupported,
+  requestNotificationPermissions,
+  scheduleReminder,
+} from '@/utils/notifications'
+import { useDiaryStore } from '@/store'
 import type { Language } from '@/types'
 
 type Step = 'language' | 'question' | 'reminder'
@@ -36,6 +42,7 @@ const dotStyles = StyleSheet.create({
 
 export default function OnboardingScreen() {
   const { completeOnboarding } = useSettings()
+  const updateQuestion = useDiaryStore((s) => s.updateQuestion)
   const [step, setStep] = useState<Step>('language')
   const [language, setLanguage] = useState<Language>('ja')
   const [questionLabel, setQuestionLabel] = useState('')
@@ -54,8 +61,26 @@ export default function OnboardingScreen() {
     setStep('reminder')
   }
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     completeOnboarding(questionLabel.trim(), language, reminderEnabled, reminderTime)
+
+    // リマインダーが ON かつネイティブアプリの場合、通知をスケジュール
+    if (reminderEnabled && isNotificationsSupported) {
+      const granted = await requestNotificationPermissions()
+      if (granted) {
+        // completeOnboarding で生成された question を store から取得して通知スケジュール
+        // store 更新は同期的なので、直後に questions を参照できる
+        const { settings } = useDiaryStore.getState()
+        const question = settings.questions[0]
+        if (question) {
+          const notificationId = await scheduleReminder(question, language)
+          if (notificationId) {
+            updateQuestion(question.id, { notificationId })
+          }
+        }
+      }
+    }
+
     router.replace('/(tabs)/')
   }
 
