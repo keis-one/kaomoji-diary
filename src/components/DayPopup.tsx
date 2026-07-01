@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Modal,
   View,
@@ -7,7 +7,7 @@ import {
   TextInput,
   StyleSheet,
   ScrollView,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from 'react-native'
 import type { DiaryEntry, KaomojiSet, Language, KaomojiLevel } from '@/types'
@@ -38,6 +38,18 @@ export const DayPopup: React.FC<Props> = ({
 }) => {
   const [level, setLevel] = useState<KaomojiLevel | null>(entry?.level ?? null)
   const [comment, setComment] = useState(entry?.comment ?? '')
+  const [keyboardOffset, setKeyboardOffset] = useState(0)
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return
+    const show = Keyboard.addListener('keyboardDidShow', e => {
+      setKeyboardOffset(e.endCoordinates.height)
+    })
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardOffset(0)
+    })
+    return () => { show.remove(); hide.remove() }
+  }, [])
 
   React.useEffect(() => {
     setLevel(entry?.level ?? null)
@@ -65,10 +77,7 @@ export const DayPopup: React.FC<Props> = ({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.wrapper}
-        >
+        <View style={[styles.wrapper, { paddingBottom: keyboardOffset }]}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <ScrollView
               keyboardShouldPersistTaps="handled"
@@ -120,7 +129,7 @@ export const DayPopup: React.FC<Props> = ({
               </View>
             </ScrollView>
           </Pressable>
-        </KeyboardAvoidingView>
+        </View>
       </Pressable>
     </Modal>
   )
