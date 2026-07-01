@@ -2,7 +2,7 @@
   "expo": {
     "name": "今日、〇〇できた？ -Did you ___ today?-",
     "slug": "kaomoji-diary",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "scheme": "kaomojiDiary",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
