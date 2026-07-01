@@ -5,11 +5,13 @@ import {
   Pressable,
   TextInput,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   Alert,
   Switch,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useSettings } from '@/hooks/useSettings'
 import { useReminder } from '@/hooks/useReminder'
 import { useTheme } from '@/hooks/useTheme'
@@ -95,7 +97,8 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.surface }]}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.pageTitle}>{isJa ? '設定' : 'Settings'}</Text>
 
         {/* 言語 */}
@@ -130,6 +133,9 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
           </View>
+          <Text style={styles.themeHint}>
+            {isJa ? 'スマホ本体のダーク/ライト設定に連動します' : "Follows your device's dark/light mode setting"}
+          </Text>
         </Section>
 
         {/* 問い管理 */}
@@ -303,6 +309,7 @@ export default function SettingsScreen() {
           </Pressable>
         </Section>
       </ScrollView>
+      </KeyboardAvoidingView>
       {kaomojiEditQuestion && (
         <KaomojiEditor
           visible={!!kaomojiEditId}
@@ -389,6 +396,7 @@ const styles = StyleSheet.create({
   addBtn: { paddingVertical: 10, paddingHorizontal: 18, backgroundColor: '#66bb6a', borderRadius: 8 },
   addBtnDisabled: { backgroundColor: '#ccc' },
   addBtnText: { color: '#fff', fontWeight: '600' },
+  themeHint: { fontSize: 12, color: '#999', textAlign: 'center', marginTop: 4 },
   premiumNote: { fontSize: 12, color: '#999', textAlign: 'center' },
   premiumBanner: {
     backgroundColor: '#fffde7', borderRadius: 14, padding: 18,

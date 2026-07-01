@@ -5,11 +5,11 @@ import {
   Pressable,
   TextInput,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useDiary } from '@/hooks/useDiary'
 import { useSettings } from '@/hooks/useSettings'
 import { useStats } from '@/hooks/useStats'
@@ -125,7 +125,7 @@ export default function HomeScreen() {
           >
             <Text style={styles.saveBtnText}>
               {settings.language === 'ja'
-                ? (todayEntry ? '編集する' : '記録する')
+                ? (todayEntry ? '更新' : '記録')
                 : (todayEntry ? 'Update' : 'Save')}
             </Text>
           </Pressable>

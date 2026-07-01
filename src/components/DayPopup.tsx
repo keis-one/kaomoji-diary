@@ -12,7 +12,6 @@ import {
 import type { DiaryEntry, KaomojiSet, Language, KaomojiLevel } from '@/types'
 import { KaomojiSelector } from './KaomojiSelector'
 import { LEVEL_LABELS } from '@/constants/kaomoji'
-import { shareEntry } from '@/utils/share'
 import { getDayOfWeek, getWhatDay } from '@/utils/dayInfo'
 
 interface Props {
@@ -50,16 +49,6 @@ export const DayPopup: React.FC<Props> = ({
     onClose()
   }
 
-  const handleShare = async () => {
-    if (!entry || !date) return
-    await shareEntry({
-      entry,
-      kaomojiSet,
-      question: questionLabel,
-      language,
-    })
-  }
-
   const labels = LEVEL_LABELS[language]
   const isJa = language === 'ja'
 
@@ -76,7 +65,7 @@ export const DayPopup: React.FC<Props> = ({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.wrapper}
         >
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
@@ -105,7 +94,7 @@ export const DayPopup: React.FC<Props> = ({
 
             <TextInput
               style={styles.commentInput}
-              placeholder="一言メモ（任意）"
+              placeholder={isJa ? '一言メモ（任意）' : 'Note (optional)'}
               value={comment}
               onChangeText={setComment}
               maxLength={100}
@@ -113,18 +102,13 @@ export const DayPopup: React.FC<Props> = ({
             />
 
             <View style={styles.actions}>
-              {entry && (
-                <Pressable onPress={handleShare} style={[styles.btn, styles.btnShare]}>
-                  <Text style={styles.btnShareText}>シェア</Text>
-                </Pressable>
-              )}
               <Pressable
                 onPress={handleSave}
                 style={[styles.btn, styles.btnSave, !level && styles.btnDisabled]}
                 disabled={!level}
               >
                 <Text style={styles.btnSaveText}>
-                  {entry ? '更新' : '記録'}
+                  {entry ? (isJa ? '更新' : 'Update') : (isJa ? '記録' : 'Save')}
                 </Text>
               </Pressable>
             </View>
@@ -142,6 +126,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   wrapper: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
@@ -208,14 +193,6 @@ const styles = StyleSheet.create({
   btnSaveText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 15,
-  },
-  btnShare: {
-    backgroundColor: '#f5f5f5',
-    flex: 0.5,
-  },
-  btnShareText: {
-    color: '#555',
     fontSize: 15,
   },
   btnDisabled: {

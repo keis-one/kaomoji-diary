@@ -4,9 +4,9 @@ import {
   Text,
   Pressable,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import { useDiaryStore } from '@/store'
 import { useSettings } from '@/hooks/useSettings'
 import { useTheme } from '@/hooks/useTheme'
@@ -164,5 +164,5 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   cellToday: { backgroundColor: c.accentLight },
   dayNum: { fontSize: 12, color: c.textSecondary, fontWeight: '500' },
   dayNumToday: { color: c.accentDark, fontWeight: '700' },
-  emoji: { fontSize: 18, lineHeight: 22 },
+  emoji: { fontSize: 18, lineHeight: 22, color: c.text },
 })
