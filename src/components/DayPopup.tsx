@@ -6,6 +6,7 @@ import {
   Pressable,
   TextInput,
   StyleSheet,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native'
@@ -69,49 +70,55 @@ export const DayPopup: React.FC<Props> = ({
           style={styles.wrapper}
         >
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.handle} />
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.sheetContent}
+            >
+              <View style={styles.handle} />
 
-            <Text style={styles.dateText}>{dateLabel}</Text>
-            {whatDay && (
-              <Text style={styles.whatDayText}>
-                {isJa ? `「${whatDay}」` : whatDay}
-              </Text>
-            )}
-            <Text style={styles.questionText}>
-              {isJa ? `今日、${questionLabel}できた？` : `Did you ${questionLabel} today?`}
-            </Text>
-
-            {level !== null && (
-              <Text style={styles.bigKaomoji}>{kaomojiSet[level]}</Text>
-            )}
-
-            <KaomojiSelector
-              kaomojiSet={kaomojiSet}
-              selected={level}
-              onSelect={setLevel}
-              language={language}
-            />
-
-            <TextInput
-              style={styles.commentInput}
-              placeholder={isJa ? '一言メモ（任意）' : 'Note (optional)'}
-              value={comment}
-              onChangeText={setComment}
-              maxLength={100}
-              multiline
-            />
-
-            <View style={styles.actions}>
-              <Pressable
-                onPress={handleSave}
-                style={[styles.btn, styles.btnSave, !level && styles.btnDisabled]}
-                disabled={!level}
-              >
-                <Text style={styles.btnSaveText}>
-                  {entry ? (isJa ? '更新' : 'Update') : (isJa ? '記録' : 'Save')}
+              <Text style={styles.dateText}>{dateLabel}</Text>
+              {whatDay && (
+                <Text style={styles.whatDayText}>
+                  {isJa ? `「${whatDay}」` : whatDay}
                 </Text>
-              </Pressable>
-            </View>
+              )}
+              <Text style={styles.questionText}>
+                {isJa ? `今日、${questionLabel}できた？` : `Did you ${questionLabel} today?`}
+              </Text>
+
+              {level !== null && (
+                <Text style={styles.bigKaomoji}>{kaomojiSet[level]}</Text>
+              )}
+
+              <KaomojiSelector
+                kaomojiSet={kaomojiSet}
+                selected={level}
+                onSelect={setLevel}
+                language={language}
+              />
+
+              <TextInput
+                style={styles.commentInput}
+                placeholder={isJa ? '一言メモ（任意）' : 'Note (optional)'}
+                value={comment}
+                onChangeText={setComment}
+                maxLength={100}
+                multiline
+              />
+
+              <View style={styles.actions}>
+                <Pressable
+                  onPress={handleSave}
+                  style={[styles.btn, styles.btnSave, !level && styles.btnDisabled]}
+                  disabled={!level}
+                >
+                  <Text style={styles.btnSaveText}>
+                    {entry ? (isJa ? '更新' : 'Update') : (isJa ? '記録' : 'Save')}
+                  </Text>
+                </Pressable>
+              </View>
+            </ScrollView>
           </Pressable>
         </KeyboardAvoidingView>
       </Pressable>
@@ -135,6 +142,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     padding: 20,
     paddingBottom: 36,
+  },
+  sheetContent: {
     gap: 12,
   },
   handle: {
