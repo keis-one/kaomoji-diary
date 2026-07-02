@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { KaomojiSet, KaomojiLevel, Language } from '@/types'
 import { KAOMOJI_LEVELS, LEVEL_LABELS, DEFAULT_KAOMOJI_SET, PRESET_KAOMOJI_SETS } from '@/constants/kaomoji'
 import { KAOMOJI_MAX_LENGTH } from '@/types'
@@ -33,6 +34,7 @@ export const KaomojiEditor: React.FC<Props> = ({
   onClose,
 }) => {
   const [draft, setDraft] = useState<KaomojiSet>({ ...kaomojiSet })
+  const insets = useSafeAreaInsets()
   const isJa = language === 'ja'
 
   // モーダルが開くたびに最新の kaomojiSet で draft を初期化
@@ -86,7 +88,7 @@ export const KaomojiEditor: React.FC<Props> = ({
         style={{ flex: 1, backgroundColor: '#fff' }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: 14 + insets.top }]}>
           <Pressable onPress={onClose} style={styles.cancelBtn}>
             <Text style={styles.cancelText}>{isJa ? 'キャンセル' : 'Cancel'}</Text>
           </Pressable>

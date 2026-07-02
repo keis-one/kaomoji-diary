@@ -134,7 +134,7 @@ export default function SettingsScreen() {
             ))}
           </View>
           <Text style={styles.themeHint}>
-            {isJa ? 'スマホ本体のダーク/ライト設定に連動します' : "Follows your device's dark/light mode setting"}
+            {isJa ? '自動はスマホ本体のダーク/ライト設定に連動します' : "Auto follows your device's dark/light mode setting"}
           </Text>
         </Section>
 
