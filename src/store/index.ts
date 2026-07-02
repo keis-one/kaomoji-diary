@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import type { DiaryEntry, UserSettings, KaomojiLevel, Question } from '@/types'
+import type { DiaryEntry, UserSettings, KaomojiLevel, Question, Language } from '@/types'
 import {
   DEFAULT_SETTINGS,
   STORAGE_KEYS,
@@ -32,7 +32,7 @@ interface DiaryStore {
   setActiveQuestion: (id: string) => void
 
   updateSettings: (partial: Partial<Omit<UserSettings, 'questions'>>) => void
-  completeOnboarding: (firstQuestionLabel: string, language?: string, reminderEnabled?: boolean, reminderTime?: string) => void
+  completeOnboarding: (firstQuestionLabel: string, language?: Language, reminderEnabled?: boolean, reminderTime?: string) => void
   resetAll: () => void
 }
 

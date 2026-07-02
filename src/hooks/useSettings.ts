@@ -1,5 +1,5 @@
 import { useDiaryStore } from '@/store'
-import type { UserSettings, Question } from '@/types'
+import type { UserSettings, Question, Language } from '@/types'
 import { FREE_QUESTION_LIMIT, PREMIUM_QUESTION_LIMIT } from '@/constants/app'
 
 export interface UseSettingsReturn {
@@ -12,7 +12,7 @@ export interface UseSettingsReturn {
   updateQuestion: (id: string, partial: Partial<Omit<Question, 'id'>>) => void
   removeQuestion: (id: string) => void
   setActiveQuestion: (id: string) => void
-  completeOnboarding: (firstQuestionLabel: string, language?: string, reminderEnabled?: boolean, reminderTime?: string) => void
+  completeOnboarding: (firstQuestionLabel: string, language?: Language, reminderEnabled?: boolean, reminderTime?: string) => void
   isOnboardingDone: boolean
 }
 
