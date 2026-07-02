@@ -280,8 +280,9 @@ export default function SettingsScreen() {
           </Section>
         )}
 
-        {/* DEV toggle */}
-        {__DEV__ && (
+        {/* DEV toggle — Expo Go / dev client (__DEV__) と EAS preview ビルド
+            (EXPO_PUBLIC_ENABLE_DEV_TOOLS=true) でのみ表示。production では非表示 */}
+        {(__DEV__ || process.env.EXPO_PUBLIC_ENABLE_DEV_TOOLS === 'true') && (
           <Section title="[DEV] Premium">
             <View style={styles.devRow}>
               <Text style={styles.devLabel}>Premium toggle</Text>

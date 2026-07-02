@@ -2,7 +2,7 @@
   "expo": {
     "name": "今日、〇〇できた？ -Did you ___ today?-",
     "slug": "kaomoji-diary",
-    "version": "1.0.3",
+    "version": "1.0.7",
     "scheme": "kaomojiDiary",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -33,7 +33,14 @@
           "color": "#66bb6a",
           "defaultChannel": "reminder"
         }
-      ]
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-4395545227647434~2792613047"
+        }
+      ],
+      "./plugins/withKotlinSkipMetadataCheck"
     ],
     "extra": {
       "router": {},

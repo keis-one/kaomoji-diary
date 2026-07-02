@@ -3,6 +3,7 @@ import { Stack } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { router } from 'expo-router'
 import { setupNotifications, addNotificationTapListener } from '@/utils/notifications'
+import { initializeAds } from '@/utils/ads'
 import { useTheme } from '@/hooks/useTheme'
 
 export default function RootLayout() {
@@ -10,6 +11,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     setupNotifications()
+    initializeAds()
     const remove = addNotificationTapListener(() => {
       router.replace('/(tabs)/')
     })
