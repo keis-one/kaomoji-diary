@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Alert } from 'react-native'
 import { useSettings } from './useSettings'
 import {
@@ -10,6 +11,11 @@ import {
 export const useReminder = () => {
   const { settings, updateQuestion } = useSettings()
   const isJa = settings.language === 'ja'
+  // 問いごとに「最後に呼ばれたtoggle操作」を記録する。
+  // ON操作の非同期処理（許可確認・スケジューリング）が完了する前に
+  // 別のtoggle操作が入ると、後から完了した処理が状態を上書きしてしまう
+  // 競合状態を防ぐため、完了時にまだ自分が最新の操作かを確認する。
+  const latestToggleRef = useRef(new Map<string, symbol>())
 
   const toggleReminder = async (questionId: string, enabled: boolean) => {
     const question = settings.questions.find((q) => q.id === questionId)
@@ -25,6 +31,10 @@ export const useReminder = () => {
       )
       return
     }
+
+    const token = Symbol()
+    latestToggleRef.current.set(questionId, token)
+    const isLatestToggle = () => latestToggleRef.current.get(questionId) === token
 
     if (enabled) {
       // 通知許可を確認
@@ -45,6 +55,16 @@ export const useReminder = () => {
       }
 
       const notificationId = await scheduleReminder(question, settings.language)
+
+      if (!isLatestToggle()) {
+        // 待っている間に別のtoggle操作が入っていた場合、
+        // この呼び出しの結果は保存せず、取得した通知だけ破棄する。
+        if (notificationId) {
+          await cancelReminder(notificationId)
+        }
+        return
+      }
+
       updateQuestion(questionId, {
         reminderEnabled: true,
         notificationId,
@@ -54,6 +74,9 @@ export const useReminder = () => {
       if (question.notificationId) {
         await cancelReminder(question.notificationId)
       }
+
+      if (!isLatestToggle()) return
+
       updateQuestion(questionId, { reminderEnabled: false, notificationId: undefined })
     }
   }
