@@ -28,6 +28,17 @@ export class MemoryStorage {
     this.writeCount++
     for (const [k, v] of pairs) this.data.set(k, v)
   }
+  failRemoves = false
+  async getAllKeys(): Promise<string[]> {
+    return [...this.data.keys()]
+  }
+  async multiRemove(keys: string[]): Promise<void> {
+    if (this.failRemoves) throw new Error('remove failed')
+    for (const k of keys) this.data.delete(k)
+  }
+  chunkKeys(): string[] {
+    return [...this.data.keys()].filter((k) => k.startsWith(`${STORAGE_KEY}__chunk_`)).sort()
+  }
   /** 保存データの state 部分（分けて保存していればつなげて読む） */
   stored(): any {
     let raw = this.data.get(STORAGE_KEY)
@@ -54,7 +65,10 @@ export class MockNotifier {
     if (this.failAllCancels || this.failCancel.has(id)) throw new Error(`cancel failed: ${id}`)
     this.scheduled.delete(id)
   }
+  /** 設定すると、一覧の取得はこの Promise が終わるまで待つ（競合の再現用） */
+  listGate: Promise<void> | null = null
   async listScheduledIds(): Promise<string[]> {
+    if (this.listGate) await this.listGate
     if (this.failList) throw new Error('list failed')
     return [...this.scheduled]
   }
@@ -108,3 +122,24 @@ export const freeState = (entries: DiaryEntry[], extra: Record<string, unknown> 
 
 export const sortEntries = (es: DiaryEntry[]) =>
   [...es].sort((a, b) => (a.date + a.questionId < b.date + b.questionId ? -1 : 1))
+
+/** 外から完了させられる Promise（非同期の競合を再現する） */
+export const deferred = <T = void>() => {
+  let resolve!: (v: T) => void
+  const promise = new Promise<T>((r) => (resolve = r))
+  return { promise, resolve }
+}
+
+/** 予約APIの模擬: 呼ばれたらすぐ予約済み一覧に入れ、ID を返すのは gate が終わってから（実機の非同期の予約を模す） */
+export const delayedSchedule = (notifier: MockNotifier, id: string, gate: Promise<void>, calls: string[] = []) =>
+  async (_q: Question): Promise<string> => {
+    calls.push(id)
+    notifier.schedule(id)
+    await gate
+    return id
+  }
+
+/** 何回か待って、止まっている非同期の処理を進める */
+export const tick = async (n = 10) => {
+  for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0))
+}

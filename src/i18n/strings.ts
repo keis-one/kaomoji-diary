@@ -30,7 +30,9 @@ const ja = {
   // オンボーディング
   onboardingSaveFailed: '保存できませんでした。もう一度お試しください',
 
-  // ホーム
+  // ホーム（UI仕様 3章: 記録が無ければ「記録する」、記録済みなら「編集する」）
+  homeRecord: '記録する',
+  homeEdit: '編集する',
   homeSaveFailed: '保存できませんでした。もう一度お試しください',
 
   // ポップアップ
@@ -177,6 +179,8 @@ const en: Strings = {
 
   onboardingSaveFailed: "Couldn't save. Please try again.",
 
+  homeRecord: 'Save',
+  homeEdit: 'Edit',
   homeSaveFailed: "Couldn't save. Please try again.",
 
   popupRecord: 'Save',

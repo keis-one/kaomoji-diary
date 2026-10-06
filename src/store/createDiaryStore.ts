@@ -28,7 +28,7 @@ import {
   unwrapStoredJson,
   type PersistedData,
 } from './persisted'
-import { readValue, writeValue, type KeyValueStorage } from './chunkedStorage'
+import { readValueInfo, removeStaleChunks, writeValue, type KeyValueStorage } from './chunkedStorage'
 
 export const STORAGE_KEY = 'diary_entries'
 /** 保存データが JSON として読めなかったときに、元の文字列を退避するキー */
@@ -95,6 +95,26 @@ export interface DiaryState extends PersistedData {
   processNotificationMaintenance: () => Promise<void>
   /** 並んでいる書き込みがすべて終わるまで待つ */
   flushWrites: () => Promise<void>
+
+  // ── 通知の予約（予約・整理・リセットの順番と世代をストアで管理する） ──
+  /**
+   * 通知の操作の世代。全データリセットのたびに 1 増える。
+   * 操作を始めた時点の世代を覚えておき、終わった時点で変わっていたら（＝途中でリセットされたら）結果を捨てる。
+   */
+  getNotificationEpoch: () => number
+  /**
+   * 問いのリマインダーを予約する（ON・時刻変更・オンボーディング）。
+   * 通知の整理（A3）と同じ列に並べて1つずつ行うので、予約した通知の ID がストアに入る前に
+   * 整理で消されることはない。予約し終えた時点で、操作を始めた後にリセットされていた・問いが無くなった・
+   * isLatest() が false（後から別の操作が入った）なら、予約した通知を解除して結果を捨てる。
+   */
+  scheduleQuestionReminder: (
+    questionId: string,
+    schedule: (q: Question) => Promise<string | undefined>,
+    opts?: { epoch?: number; reminderTime?: string; isLatest?: () => boolean },
+  ) => Promise<'scheduled' | 'discarded' | 'notScheduled'>
+  /** 問いのリマインダーを OFF にする（通知の解除は失敗したら解除待ちへ） */
+  disableQuestionReminder: (questionId: string, opts?: { epoch?: number; isLatest?: () => boolean }) => Promise<void>
 }
 
 export type DiaryStore = StoreApi<DiaryState>
@@ -104,6 +124,14 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
   const makeQuestion = deps.createQuestion ?? createDefaultQuestion
 
   let writeChain: Promise<unknown> = Promise.resolve()
+  // 通知の予約と整理を1つずつ行う列（保存の列とは別）
+  let notificationChain: Promise<unknown> = Promise.resolve()
+  const runNotificationTask = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = notificationChain.then(task, task)
+    notificationChain = run.catch(() => undefined)
+    return run
+  }
+  let notificationEpoch = 0
   /** 書き込みを1本の列に並べる */
   const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
     const run = writeChain.then(task, task)
@@ -125,7 +153,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
      * 次の状態を作って先に保存し、成功したときだけメモリに反映する。
      * 保存中にほかの変更がメモリに入った場合は、その変更の上にもう一度 update を当てる。
      */
-    const commit = (update: (s: PersistedData) => PersistedData): Promise<void> => {
+    const commit = (update: (s: PersistedData) => PersistedData, onCommitted?: () => void): Promise<void> => {
       if (!get().hydrated) return Promise.reject(new Error('保存データの読み込み前は保存しない'))
       return enqueue(async () => {
         const base = pickPersisted(get())
@@ -134,6 +162,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
         const latest = pickPersisted(get())
         const sameBase = PERSISTED_KEYS.every((k) => latest[k] === base[k])
         set(sameBase ? next : update(latest))
+        onCommitted?.() // メモリに反映したのと同じ同期処理の中で行う（間に別の処理が入らない）
       })
     }
 
@@ -152,7 +181,10 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
       hydrate: async () => {
         let raw: string | null
         try {
-          raw = await readValue(storage, STORAGE_KEY)
+          const info = await readValueInfo(storage, STORAGE_KEY)
+          raw = info.value
+          // 前回、書き込みの後に消しそこねた本体があれば消す（有効な状態には影響しない）
+          await removeStaleChunks(storage, STORAGE_KEY, info.chunkCount).catch(() => undefined)
         } catch {
           set({ hydrationError: true })
           return
@@ -196,7 +228,10 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
           // リセット前の通知（いまの問いの通知と解除待ちの通知）を解除待ちに入れる。リセット後に作る通知は含まない
           pendingNotificationCancelIds: [...new Set([...s.pendingNotificationCancelIds, ...currentNotificationIds(s)])],
           notificationCleanupPending: s.notificationCleanupPending,
-        }))
+        }), () => {
+          // リセット前に始まった通知の予約は、終わった時点で結果を捨てる（予約した通知は解除する）
+          notificationEpoch++
+        })
         // 保存に成功してから解除する。解除に失敗しても、リセットは取り消さない（次回以降の起動で再試行）
         await get().processNotificationMaintenance()
       },
@@ -256,6 +291,59 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
 
       flushWrites: () => enqueue(async () => undefined),
 
+      getNotificationEpoch: () => notificationEpoch,
+
+      scheduleQuestionReminder: (questionId, schedule, opts = {}) => {
+        const epoch = opts.epoch ?? notificationEpoch
+        return runNotificationTask(async () => {
+          const isStale = () =>
+            epoch !== notificationEpoch ||
+            !get().settings.questions.some((q) => q.id === questionId) ||
+            (opts.isLatest ? !opts.isLatest() : false)
+          if (isStale()) return 'discarded' as const
+          const question = get().settings.questions.find((q) => q.id === questionId) as Question
+          if (question.notificationId) await get().cancelNotificationOrQueue(question.notificationId)
+          const target: Question = opts.reminderTime ? { ...question, reminderTime: opts.reminderTime } : question
+          const id = await schedule(target)
+          if (isStale()) {
+            if (id) await get().cancelNotificationOrQueue(id)
+            // 古い ID は上で解除済み。問いが残っていれば ID を外しておく（ON のまま ID 無しにはしない）
+            if (get().settings.questions.some((q) => q.id === questionId && q.notificationId === question.notificationId && question.notificationId)) {
+              get().updateQuestion(questionId, { notificationId: undefined })
+            }
+            return 'discarded' as const
+          }
+          if (!id) {
+            if (question.notificationId) get().updateQuestion(questionId, { notificationId: undefined })
+            return 'notScheduled' as const
+          }
+          get().updateQuestion(questionId, {
+            reminderEnabled: true,
+            notificationId: id,
+            ...(opts.reminderTime ? { reminderTime: opts.reminderTime } : {}),
+          })
+          return 'scheduled' as const
+        })
+      },
+
+      disableQuestionReminder: (questionId, opts = {}) => {
+        const epoch = opts.epoch ?? notificationEpoch
+        return runNotificationTask(async () => {
+          const question = get().settings.questions.find((q) => q.id === questionId)
+          if (!question) return
+          if (question.notificationId) await get().cancelNotificationOrQueue(question.notificationId)
+          if (epoch !== notificationEpoch || (opts.isLatest && !opts.isLatest())) {
+            // 後から別の操作（ON・リセット）が入った → 状態はその操作に任せる。解除した ID だけ外す
+            const cur = get().settings.questions.find((q) => q.id === questionId)
+            if (cur && cur.notificationId === question.notificationId && question.notificationId) {
+              get().updateQuestion(questionId, { notificationId: undefined })
+            }
+            return
+          }
+          get().updateQuestion(questionId, { reminderEnabled: false, notificationId: undefined })
+        })
+      },
+
       processNotificationMaintenance: async () => {
         if (!get().hydrated) return
         const cancelled = new Set<string>()
@@ -270,17 +358,20 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
 
         let cleanupDone = false
         if (get().notificationCleanupPending) {
-          try {
-            const scheduled = await notifier.listScheduledIds()
-            for (const id of scheduled) {
-              // 解除の直前にいまの問いの通知IDを確かめ直す（その間に ON にした通知を消さない）
-              if (currentNotificationIds(get()).includes(id)) continue
-              await notifier.cancel(id)
+          // 通知の予約と同じ列で行う: 予約の途中（ID がまだストアに入っていない通知）を消さないように、
+          // 予約が終わってから一覧を取り、終わるまで次の予約を始めない
+          cleanupDone = await runNotificationTask(async () => {
+            try {
+              const scheduled = await notifier.listScheduledIds()
+              for (const id of scheduled) {
+                if (currentNotificationIds(get()).includes(id)) continue
+                await notifier.cancel(id)
+              }
+              return true
+            } catch {
+              return false // 印を残し、次回以降の起動で再試行する
             }
-            cleanupDone = true
-          } catch {
-            // 印を残し、次回以降の起動で再試行する
-          }
+          })
         }
 
         if (cancelled.size === 0 && !cleanupDone) return

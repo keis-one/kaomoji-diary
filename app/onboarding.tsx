@@ -43,7 +43,6 @@ const dotStyles = StyleSheet.create({
 
 export default function OnboardingScreen() {
   const { completeOnboarding } = useSettings()
-  const updateQuestion = useDiaryStore((s) => s.updateQuestion)
   const [step, setStep] = useState<Step>('language')
   const [language, setLanguage] = useState<Language>('ja')
   const [questionLabel, setQuestionLabel] = useState('')
@@ -83,13 +82,11 @@ export default function OnboardingScreen() {
       if (granted) {
         // completeOnboarding で生成された question を store から取得して通知スケジュール
         // （completeOnboarding は保存に成功してからメモリに反映するので、await の後に参照できる）
-        const { settings } = useDiaryStore.getState()
+        const { settings, scheduleQuestionReminder } = useDiaryStore.getState()
         const question = settings.questions[0]
         if (question) {
-          const notificationId = await scheduleReminder(question, language)
-          if (notificationId) {
-            updateQuestion(question.id, { notificationId })
-          }
+          // 予約は通知の整理・リセットと同じ列で行う（ID がストアに入る前に整理で消されないように）
+          await scheduleQuestionReminder(question.id, (q) => scheduleReminder(q, language))
         }
       }
     }

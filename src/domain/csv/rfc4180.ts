@@ -14,7 +14,7 @@ export interface CsvRecord {
   empty: boolean
 }
 
-export type CsvParseFailure = 'unclosedQuote' | 'strayCarriageReturn' | 'textAfterQuote'
+export type CsvParseFailure = 'unclosedQuote' | 'strayCarriageReturn' | 'textAfterQuote' | 'quoteInUnquotedField'
 
 export type CsvParseResult =
   | { ok: true; records: CsvRecord[] }
@@ -30,8 +30,8 @@ const LF = 10
  *
  * - 記録の区切りは CRLF・LF の両方を受け付ける。最後の記録の後の区切りは有っても無くてもよい
  * - 値の先頭が " のときは引用された値。引用の中の CR・LF・カンマは値の一部としてそのまま残し、"" は " に戻す
- * - 引用で始まらない値の途中にある " は、ふつうの文字として扱う
- * - 解析できないもの（閉じていない引用・閉じた引用の直後の余計な文字・引用の外の単独の CR）は失敗にする
+ * - 解析できないもの（閉じていない引用・閉じた引用の直後の余計な文字・引用の外の単独の CR・
+ *   引用で始まらない値の途中にある "〔RFC 4180 §2 は認めていない〕）は失敗にする
  */
 export const parseCsv = (text: string): CsvParseResult => {
   const records: CsvRecord[] = []
@@ -84,6 +84,7 @@ export const parseCsv = (text: string): CsvParseResult => {
         while (j < len) {
           const c = text.charCodeAt(j)
           if (c === COMMA || c === CR || c === LF) break
+          if (c === QUOTE) return { ok: false, reason: 'quoteInUnquotedField', line }
           j++
         }
         value = text.slice(i, j)

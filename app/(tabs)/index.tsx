@@ -137,9 +137,9 @@ export default function HomeScreen() {
             disabled={!canSave}
           >
             <Text style={styles.saveBtnText}>
-              {settings.language === 'ja'
-                ? (homeButtonMode(todayEntry) === 'edit' ? '更新' : '記録')
-                : (homeButtonMode(todayEntry) === 'edit' ? 'Update' : 'Save')}
+              {homeButtonMode(todayEntry) === 'edit'
+                ? t(settings.language).homeEdit
+                : t(settings.language).homeRecord}
             </Text>
           </Pressable>
 

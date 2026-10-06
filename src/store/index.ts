@@ -16,6 +16,8 @@ const storage: KeyValueStorage =
         setItem: async (key, value) => localStorage.setItem(key, value),
         multiGet: async (keys) => keys.map((k) => [k, localStorage.getItem(k)] as const),
         multiSet: async (pairs) => pairs.forEach(([k, v]) => localStorage.setItem(k, v)),
+        getAllKeys: async () => Object.keys(localStorage),
+        multiRemove: async (keys) => keys.forEach((k) => localStorage.removeItem(k)),
       }
     : {
         getItem: (key) => AsyncStorage.getItem(key),
@@ -23,6 +25,8 @@ const storage: KeyValueStorage =
         multiGet: (keys) => AsyncStorage.multiGet(keys),
         // Android の multiSet は1つのトランザクションで書き込む（全部書けるか、何も書かないか）
         multiSet: (pairs) => AsyncStorage.multiSet(pairs),
+        getAllKeys: () => AsyncStorage.getAllKeys(),
+        multiRemove: (keys) => AsyncStorage.multiRemove(keys),
       }
 
 export const diaryStore = createDiaryStore({

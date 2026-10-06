@@ -50,16 +50,32 @@ test('設定画面で resetAllData を呼ぶのは「リセットする」の確
   assert.match(code, /label: s\.resetOk, onPress: handleReset, kind: 'danger'/)
 })
 
-test('通知の解除は、失敗したら解除待ちに入れる共通の処理（cancelNotificationOrQueue）を通す', () => {
-  // 通知APIの解除を直接呼ぶのはストアの組み立て（src/store/index.ts）だけ
+test('通知の予約・解除はストアの共通の処理を通す（画面・フックが通知APIを直接解除しない／ID を直接書き込まない）', () => {
+  // 通知APIの解除を直接参照するのはストアの組み立て（src/store/index.ts）だけ
   const direct = APP_FILES.filter((f) => /\bcancelReminder\b/.test(stripComments(readFileSync(f, 'utf8'))))
     .map(rel)
     .filter((f) => !f.startsWith('src/utils/notifications'))
     .sort()
-  assert.deepEqual(direct, ['src/hooks/useReminder.ts', 'src/store/index.ts'])
+  assert.deepEqual(direct, ['src/store/index.ts'])
+  // 予約した通知IDを updateQuestion で直接書き込む画面・フックが無い（予約はストアの scheduleQuestionReminder）
+  const writesId = APP_FILES.filter((f) => /updateQuestion\([^)]*notificationId/.test(stripComments(readFileSync(f, 'utf8'))))
+    .map(rel)
+    .filter((f) => f !== 'src/store/createDiaryStore.ts')
+  assert.deepEqual(writesId, [])
   const reminder = stripComments(read('src/hooks/useReminder.ts'))
-  assert.match(reminder, /const cancelReminder = useDiaryStore\(\(s\) => s\.cancelNotificationOrQueue\)/)
-  assert.doesNotMatch(reminder, /from '@\/utils\/notifications'[\s\S]*cancelReminder[\s\S]*\} from/)
+  assert.match(reminder, /scheduleQuestionReminder\(/)
+  assert.match(reminder, /disableQuestionReminder\(/)
+  assert.match(stripComments(read('app/onboarding.tsx')), /scheduleQuestionReminder\(/)
+})
+
+test('ホームのボタンは「記録する」／「編集する」（UI仕様 3章）、英語は Save／Edit', () => {
+  assert.equal(STRINGS.ja.homeRecord, '記録する')
+  assert.equal(STRINGS.ja.homeEdit, '編集する')
+  assert.equal(STRINGS.en.homeRecord, 'Save')
+  assert.equal(STRINGS.en.homeEdit, 'Edit')
+  const code = stripComments(read('app/(tabs)/index.tsx'))
+  assert.match(code, /homeButtonMode\(todayEntry\) === 'edit'\s*\?\s*t\(settings\.language\)\.homeEdit\s*:\s*t\(settings\.language\)\.homeRecord/)
+  assert.doesNotMatch(code, /'更新'|'Update'/)
 })
 
 test('A4 広告は高さ固定の 320×50（BANNER）で、枠の高さは読み込みの状態に関係なく adSlotHeight', () => {
@@ -123,9 +139,9 @@ test('一言の入力欄に maxLength を付けない（長い一言を切り詰
   }
 })
 
-test('app.json の version は 1.2.0（Sprint 19 の 19a 追補・19b 完了で MINOR を上げる）', () => {
+test('app.json の version は 1.2.1（19b 評価の指摘修正で PATCH を上げる）', () => {
   const appJson = JSON.parse(read('app.json'))
-  assert.equal(appJson.expo.version, '1.2.0')
+  assert.equal(appJson.expo.version, '1.2.1')
 })
 
 test('カレンダーのセルは絵文字（DEFAULT_EMOJI_SET）、ポップアップは顔文字', () => {

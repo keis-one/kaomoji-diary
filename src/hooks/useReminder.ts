@@ -11,14 +11,19 @@ import {
 export const useReminder = () => {
   const { settings, updateQuestion } = useSettings()
   const isJa = settings.language === 'ja'
-  // 問いごとに「最後に呼ばれたtoggle操作」を記録する。
-  // ON操作の非同期処理（許可確認・スケジューリング）が完了する前に
-  // 別のtoggle操作が入ると、後から完了した処理が状態を上書きしてしまう
-  // 競合状態を防ぐため、完了時にまだ自分が最新の操作かを確認する。
-  // 時刻の変更も同じ記録を使い、ON/OFF・時刻変更のうち最後の操作の結果だけを残す。
+  // 問いごとに「最後に呼ばれた操作」（ON/OFF・時刻変更）を記録し、最後の操作の結果だけを残す（Sprint 18）。
+  // 予約そのものはストアの scheduleQuestionReminder / disableQuestionReminder が、通知の整理（A3）と
+  // 同じ列で1つずつ行い、全データリセットをまたいだ操作の結果は捨てる（操作の世代。Sprint 19b 評価 #1・#2）。
   const latestToggleRef = useRef(new Map<string, symbol>())
-  // 通知の解除は、失敗したら「解除待ちの通知ID」に入れて次回以降の起動で再試行する（製品仕様 Sprint 19a 追補 A1）
-  const cancelReminder = useDiaryStore((s) => s.cancelNotificationOrQueue)
+  const scheduleQuestionReminder = useDiaryStore((s) => s.scheduleQuestionReminder)
+  const disableQuestionReminder = useDiaryStore((s) => s.disableQuestionReminder)
+  const getNotificationEpoch = useDiaryStore((s) => s.getNotificationEpoch)
+
+  const beginOperation = (questionId: string) => {
+    const token = Symbol()
+    latestToggleRef.current.set(questionId, token)
+    return () => latestToggleRef.current.get(questionId) === token
+  }
 
   const toggleReminder = async (questionId: string, enabled: boolean) => {
     const question = settings.questions.find((q) => q.id === questionId)
@@ -35,9 +40,9 @@ export const useReminder = () => {
       return
     }
 
-    const token = Symbol()
-    latestToggleRef.current.set(questionId, token)
-    const isLatestToggle = () => latestToggleRef.current.get(questionId) === token
+    // 操作を始めた時点の世代（許可の確認を待っている間にリセットされても結果を捨てられるように）
+    const epoch = getNotificationEpoch()
+    const isLatest = beginOperation(questionId)
 
     if (enabled) {
       // 通知許可を確認
@@ -51,36 +56,9 @@ export const useReminder = () => {
         )
         return
       }
-
-      // 既存の通知をキャンセルしてから再スケジュール
-      if (question.notificationId) {
-        await cancelReminder(question.notificationId)
-      }
-
-      const notificationId = await scheduleReminder(question, settings.language)
-
-      if (!isLatestToggle()) {
-        // 待っている間に別のtoggle操作が入っていた場合、
-        // この呼び出しの結果は保存せず、取得した通知だけ破棄する。
-        if (notificationId) {
-          await cancelReminder(notificationId)
-        }
-        return
-      }
-
-      updateQuestion(questionId, {
-        reminderEnabled: true,
-        notificationId,
-      })
+      await scheduleQuestionReminder(questionId, (q) => scheduleReminder(q, settings.language), { epoch, isLatest })
     } else {
-      // リマインダー OFF — 通知をキャンセル
-      if (question.notificationId) {
-        await cancelReminder(question.notificationId)
-      }
-
-      if (!isLatestToggle()) return
-
-      updateQuestion(questionId, { reminderEnabled: false, notificationId: undefined })
+      await disableQuestionReminder(questionId, { epoch, isLatest })
     }
   }
 
@@ -91,23 +69,15 @@ export const useReminder = () => {
     // 時刻を更新
     updateQuestion(questionId, { reminderTime: time })
 
-    // リマインダーが ON の場合は通知を再スケジュール
+    // リマインダーが ON の場合は通知を再スケジュール（予約し直す前の通知IDはストアの最新の値を使う）
     if (question.reminderEnabled && isNotificationsSupported) {
-      const token = Symbol()
-      latestToggleRef.current.set(questionId, token)
-      // 予約し直す前の通知IDは、ストアの最新の値を使う（連続入力で古い ID を解除し損ねないように）
-      const current = useDiaryStore.getState().settings.questions.find((q) => q.id === questionId)
-      if (current?.notificationId) {
-        await cancelReminder(current.notificationId)
-      }
-      const updatedQuestion = { ...question, reminderTime: time }
-      const notificationId = await scheduleReminder(updatedQuestion, settings.language)
-      if (latestToggleRef.current.get(questionId) !== token) {
-        // 待っている間に別の操作が入った → この通知は使わない
-        if (notificationId) await cancelReminder(notificationId)
-        return
-      }
-      updateQuestion(questionId, { notificationId })
+      const epoch = getNotificationEpoch()
+      const isLatest = beginOperation(questionId)
+      await scheduleQuestionReminder(questionId, (q) => scheduleReminder(q, settings.language), {
+        epoch,
+        isLatest,
+        reminderTime: time,
+      })
     }
   }
 
