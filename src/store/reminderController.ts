@@ -31,6 +31,9 @@ export type ReminderResult =
   | 'saved'
   | 'noQuestion'
 
+/** リマインダーの時刻として正しいか（H:MM / HH:MM、0:00〜23:59） */
+export const isValidReminderTime = (time: string): boolean => /^([01]?\d|2[0-3]):[0-5]\d$/.test(time)
+
 export const createReminderController = (deps: ReminderDeps) => {
   const { store } = deps
   const scheduleFn = (q: Question) => deps.schedule(q, store.getState().settings.language)
@@ -50,7 +53,8 @@ export const createReminderController = (deps: ReminderDeps) => {
     const granted = await deps.requestPermission()
     if (!store.getState().isReminderOperationCurrent(ticket)) return 'discarded'
     if (!granted) {
-      store.getState().endReminderOperation(ticket)
+      // 許可されなかった: OFF のまま保存し、失敗を表示する（reminderFailure）
+      store.getState().failReminderOperation(ticket)
       deps.onPermissionDenied?.()
       return 'denied'
     }
@@ -67,9 +71,15 @@ export const createReminderController = (deps: ReminderDeps) => {
     if (!question) return 'noQuestion'
     st.updateQuestion(questionId, { reminderTime: time })
     if (!deps.isSupported) return 'saved'
+    // 入力の途中（"7:" など）は保存だけ。HH:MM がそろってから予約し直す（途中の値で予約に失敗して OFF にしない）
+    if (!isValidReminderTime(time)) return 'saved'
     const pending = st.pendingReminderOperation(questionId)
+    // ON・オンボーディング・時刻変更の途中なら、新しい時刻で予約し直す（それまでの操作は古くなる）
     const reschedule =
-      pending === 'on' || pending === 'onboarding' || (pending !== 'off' && question.reminderEnabled)
+      pending === 'on' ||
+      pending === 'onboarding' ||
+      pending === 'time' ||
+      (pending !== 'off' && question.reminderEnabled)
     if (!reschedule) return 'saved'
     const ticket = st.beginReminderOperation(questionId, 'time')
     return store.getState().scheduleQuestionReminder(ticket, scheduleFn, { reminderTime: time })
@@ -111,7 +121,8 @@ export const finishOnboarding = async (
       const r = await store.getState().scheduleQuestionReminder(ticket, (q) => deps.schedule(q, input.language))
       if (r === 'discarded') return 'discarded'
     } else {
-      store.getState().endReminderOperation(ticket)
+      // 許可されなかった: リマインダーを OFF に戻して保存し、ホーム・設定に失敗を表示する（ホームへの移動は妨げない）
+      store.getState().failReminderOperation(ticket)
     }
   } else {
     store.getState().endReminderOperation(ticket)

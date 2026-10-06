@@ -66,6 +66,7 @@ const SettingsMain: React.FC<{ onOpen: (v: View_) => void }> = ({ onOpen }) => {
   const { settings, activeQuestion: q, updateSettings, updateQuestion } = useSettings()
   const entries = useDiaryStore((s) => s.entries)
   const resetAllData = useDiaryStore((s) => s.resetAllData)
+  const reminderFailure = useDiaryStore((s) => s.reminderFailure)
   const { toggleReminder, updateReminderTime } = useReminder()
   const { colors } = useTheme()
   const styles = makeStyles(colors)
@@ -182,6 +183,8 @@ const SettingsMain: React.FC<{ onOpen: (v: View_) => void }> = ({ onOpen }) => {
               </View>
             </View>
           )}
+          {/* 許可の拒否・予約の失敗のあと（リマインダーは OFF に戻っている）。もう一度 ON にすると再試行できる */}
+          {reminderFailure && <Text style={styles.errorText}>{s.reminderSetupFailed}</Text>}
 
           <Text style={styles.itemLabel}>{s.language}</Text>
           <View style={styles.langRow}>

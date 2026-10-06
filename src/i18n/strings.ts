@@ -18,7 +18,6 @@ const ja = {
   toastRecorded: '記録しました',
   toastSaved: '保存しました',
   toastDeleted: '記録を削除しました',
-  toastExported: 'バックアップファイルを作成しました',
   toastImported: (n: number) => `${n} 件の記録を読み込みました`,
   toastCopied: 'コピーしました',
 
@@ -34,6 +33,9 @@ const ja = {
   homeRecord: '記録する',
   homeEdit: '編集する',
   homeSaveFailed: '保存できませんでした。もう一度お試しください',
+  // リマインダーを設定できなかったとき（許可の拒否・予約の失敗）。リマインダーは OFF に戻っている
+  reminderSetupFailed: '通知を設定できませんでした（端末の通知の許可を確認してください）',
+  dismiss: '閉じる',
 
   // ポップアップ
   popupRecord: '記録する',
@@ -80,6 +82,7 @@ const ja = {
   exporting: '書き出しています…',
   exportNoRecords: '書き出す記録がありません',
   exportFailed: '書き出せませんでした。もう一度お試しください（記録は変更されていません）',
+  exportHowItWorks: '「CSVを書き出す」を押したあと、保存先やアプリを選ぶと、選んだアプリが完了をお知らせします。',
   exportTooLarge: 'このファイルは 10 MB を超えるため、このアプリでは読み込めません',
   shareDialogTitle: 'CSVファイルを保存・共有',
 
@@ -169,7 +172,6 @@ const en: Strings = {
   toastRecorded: 'Saved',
   toastSaved: 'Updated',
   toastDeleted: 'Record deleted',
-  toastExported: 'Backup file created',
   toastImported: (n) => `Imported ${n} ${n === 1 ? 'record' : 'records'}`,
   toastCopied: 'Copied',
 
@@ -182,6 +184,8 @@ const en: Strings = {
   homeRecord: 'Save',
   homeEdit: 'Edit',
   homeSaveFailed: "Couldn't save. Please try again.",
+  reminderSetupFailed: "Couldn't set up the reminder. (Please check your device's notification permission.)",
+  dismiss: 'Dismiss',
 
   popupRecord: 'Save',
   popupSave: 'Update',
@@ -225,6 +229,7 @@ const en: Strings = {
   exporting: 'Exporting…',
   exportNoRecords: 'There are no records to export',
   exportFailed: "Couldn't export. Please try again. (Your records have not been changed.)",
+  exportHowItWorks: 'After you tap "Export CSV", choose where to save it or which app to use. That app will let you know when it\'s done.',
   exportTooLarge: 'This file is larger than 10 MB, so it cannot be imported into this app',
   shareDialogTitle: 'Save or share the CSV file',
 

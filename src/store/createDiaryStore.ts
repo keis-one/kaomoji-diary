@@ -100,6 +100,12 @@ export interface DiaryState extends PersistedData {
   hydrated: boolean
   /** 保存先から読み込めなかった（読み込みの例外）。記録を上書きしないよう、どの画面にも進まない */
   hydrationError: boolean
+  /**
+   * リマインダーを設定できなかった（許可の拒否・予約の失敗・時間切れ）。保存しない（画面の表示用）。
+   * このときリマインダーは OFF に戻して保存している。設定画面・ホームに「通知を設定できませんでした…」を出す。
+   * 次に予約・OFF に成功するか、全データリセットで消える
+   */
+  reminderFailure: boolean
 
   hydrate: () => Promise<void>
 
@@ -161,6 +167,13 @@ export interface DiaryState extends PersistedData {
   ) => Promise<'scheduled' | 'discarded' | 'notScheduled'>
   /** 問いのリマインダーを OFF にする（通知の解除は失敗したら解除待ちへ）。券が古ければ何もしない */
   disableQuestionReminder: (ticket: ReminderTicket) => Promise<'disabled' | 'discarded'>
+  /**
+   * 券の操作でリマインダーを設定できなかった（許可の拒否など、予約まで進まなかったとき）。
+   * 券が最新なら、リマインダーを OFF に戻して保存し、reminderFailure を立てる。券が古ければ何もしない
+   */
+  failReminderOperation: (ticket: ReminderTicket) => void
+  /** 失敗の表示を消す（利用者が閉じたとき） */
+  clearReminderFailure: () => void
 }
 
 export type DiaryStore = StoreApi<DiaryState>
@@ -244,6 +257,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
       ...createInitialData(),
       hydrated: false,
       hydrationError: false,
+      reminderFailure: false,
 
       hydrate: async () => {
         let raw: string | null
@@ -299,6 +313,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
           // リセット前に始まった通知の操作は、すべて古い券になる（予約した通知は解除して結果を捨てる）
           notificationEpoch++
           latestOperation.clear()
+          set({ reminderFailure: false })
         })
         // 保存に成功してから解除する。解除に失敗しても、リセットは取り消さない（次回以降の起動で再試行）
         await get().processNotificationMaintenance()
@@ -370,6 +385,20 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
       isReminderOperationCurrent: (t) =>
         t.epoch === notificationEpoch && latestOperation.get(t.questionId)?.seq === t.seq,
 
+      failReminderOperation: (t) => {
+        if (!get().isReminderOperationCurrent(t)) return
+        const question = get().settings.questions.find((q) => q.id === t.questionId)
+        if (question && (question.reminderEnabled || question.notificationId)) {
+          // 予約まで進まなかったので、この問いの通知は無い（ON 中の時刻変更なら古い通知は先に解除済みではないため解除する）
+          if (question.notificationId) void get().cancelNotificationOrQueue(question.notificationId)
+          get().updateQuestion(t.questionId, { reminderEnabled: false, notificationId: undefined })
+        }
+        set({ reminderFailure: true })
+        get().endReminderOperation(t)
+      },
+
+      clearReminderFailure: () => set({ reminderFailure: false }),
+
       endReminderOperation: (t) => {
         const cur = latestOperation.get(t.questionId)
         if (cur && cur.seq === t.seq) cur.done = true
@@ -410,7 +439,14 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
               return 'discarded' as const
             }
             if (!id) {
-              if (question.notificationId) get().updateQuestion(questionId, { notificationId: undefined })
+              // 予約できなかった（許可なし・失敗・時間切れ）: ON と通知0件を残さない。OFF に戻して保存し、失敗を表示する。
+              // 時間切れの後で届いた通知は withTimeout の後始末で解除するので、OFF の表示と一致する
+              get().updateQuestion(questionId, {
+                reminderEnabled: false,
+                notificationId: undefined,
+                reminderTime: target.reminderTime,
+              })
+              set({ reminderFailure: true })
               return 'notScheduled' as const
             }
             get().updateQuestion(questionId, {
@@ -418,6 +454,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
               notificationId: id,
               reminderTime: target.reminderTime, // 保存値と予約した時刻を必ず一致させる
             })
+            set({ reminderFailure: false })
             return 'scheduled' as const
           } finally {
             get().endReminderOperation(ticket)
@@ -441,6 +478,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
               return 'discarded' as const
             }
             get().updateQuestion(ticket.questionId, { reminderEnabled: false, notificationId: undefined })
+            set({ reminderFailure: false })
             return 'disabled' as const
           } finally {
             get().endReminderOperation(ticket)

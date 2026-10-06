@@ -11,7 +11,6 @@ import { t } from '@/i18n/strings'
 import { buildExportCsv, exceedsImportLimit, exportFileName, summarizeExport } from '@/domain/csv/format'
 import { todayIso } from '@/utils/date'
 import { writeCsvFile, shareCsvFile } from '@/utils/csvFile'
-import { showToast } from '@/components/Toast'
 import { SubScreenHeader, useHardwareBack } from '@/components/Dialogs'
 import type { AppColors } from '@/constants/colors'
 
@@ -59,10 +58,9 @@ export const ExportScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       const uri = await writeCsvFile(fileName, csv)
       if (!aliveRef.current) return
       await shareCsvFile(uri, s.shareDialogTitle)
-      if (!aliveRef.current) return
-      // 共有した／キャンセルしたを区別できない（expo-sharing・RN Share とも Android では結果を返さない）ため、
-      // 共有画面が閉じたあとに「バックアップファイルを作成しました」を出す（2026-10-07 オーナー回答）
-      showToast(exceedsImportLimit(csv) ? `${s.toastExported}\n${s.exportTooLarge}` : s.toastExported)
+      // 共有画面を閉じたあとは何も表示しない。共有した／キャンセルしたをアプリは区別できず（expo-sharing・RN Share とも
+      // Android では結果を返さない）、完了の表示はキャンセルでも出てしまうため（2026-10-07 オーナー決定 A'）。
+      // 完了は選んだアプリが知らせる（画面の説明文 exportHowItWorks）
     } catch {
       if (aliveRef.current) setFailed(true)
     } finally {
@@ -107,6 +105,7 @@ export const ExportScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <Text style={styles.value}>{s.excludedBody}</Text>
         </View>
 
+        <Text style={styles.note}>{s.exportHowItWorks}</Text>
         {failed && <Text style={styles.error}>{s.exportFailed}</Text>}
         {exporting && <Text style={styles.progress}>{s.exporting}</Text>}
 

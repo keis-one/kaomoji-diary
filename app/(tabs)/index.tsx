@@ -23,6 +23,7 @@ import type { KaomojiLevel } from '@/types'
 import { checkCommentEdit } from '@/domain/dayEditor'
 import { homeButtonMode, shouldShowStreak } from '@/domain/entries'
 import { t } from '@/i18n/strings'
+import { useDiaryStore } from '@/store'
 
 export default function HomeScreen() {
   const { todayEntry, record } = useDiary()
@@ -34,6 +35,9 @@ export default function HomeScreen() {
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
+  // オンボーディング等でリマインダーを設定できなかったとき（リマインダーは OFF に戻っている）
+  const reminderFailure = useDiaryStore((s) => s.reminderFailure)
+  const clearReminderFailure = useDiaryStore((s) => s.clearReminderFailure)
 
   // カレンダーで今日の記録を保存・削除したときも、この表示に反映する
   React.useEffect(() => {
@@ -89,6 +93,14 @@ export default function HomeScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {reminderFailure && (
+            <View style={styles.noticeBanner}>
+              <Text style={styles.noticeText}>{t(settings.language).reminderSetupFailed}</Text>
+              <Pressable onPress={clearReminderFailure} hitSlop={8} accessibilityLabel={t(settings.language).dismiss}>
+                <Text style={styles.noticeClose}>×</Text>
+              </Pressable>
+            </View>
+          )}
           <Text style={styles.date}>{dateLabel}</Text>
           {whatDay && (
             <Text style={styles.whatDay}>
@@ -188,6 +200,12 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   saveBtn: { width: '100%', paddingVertical: 15, borderRadius: 12, backgroundColor: c.accent, alignItems: 'center' },
   saveBtnDisabled: { backgroundColor: c.border },
   errorText: { width: '100%', fontSize: 13, color: c.danger },
+  noticeBanner: {
+    width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8,
+    padding: 12, borderRadius: 12, borderWidth: 1, borderColor: c.danger, backgroundColor: c.card,
+  },
+  noticeText: { flex: 1, fontSize: 13, color: c.danger },
+  noticeClose: { fontSize: 18, color: c.textMuted, paddingHorizontal: 4 },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   shareBtn: { width: '100%', paddingVertical: 12, borderRadius: 12, backgroundColor: c.accentLight, alignItems: 'center', borderWidth: 1, borderColor: c.accent },
   shareBtnText: { color: c.accentDark, fontSize: 15, fontWeight: '600' },
