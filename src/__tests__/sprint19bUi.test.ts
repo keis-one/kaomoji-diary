@@ -62,10 +62,17 @@ test('通知の予約・解除はストアの共通の処理を通す（画面�
     .map(rel)
     .filter((f) => f !== 'src/store/createDiaryStore.ts')
   assert.deepEqual(writesId, [])
-  const reminder = stripComments(read('src/hooks/useReminder.ts'))
-  assert.match(reminder, /scheduleQuestionReminder\(/)
-  assert.match(reminder, /disableQuestionReminder\(/)
-  assert.match(stripComments(read('app/onboarding.tsx')), /scheduleQuestionReminder\(/)
+  // 予約・OFF・時刻変更・オンボーディングの手順は src/store/reminderController.ts だけが持つ
+  const callers = (fn: string) =>
+    APP_FILES.filter((f) => new RegExp(`\\b${fn}\\s*\\(`).test(stripComments(readFileSync(f, 'utf8'))))
+      .map(rel)
+      .filter((f) => f !== 'src/store/createDiaryStore.ts')
+      .sort()
+  assert.deepEqual(callers('scheduleQuestionReminder'), ['src/store/reminderController.ts'])
+  assert.deepEqual(callers('disableQuestionReminder'), ['src/store/reminderController.ts'])
+  assert.deepEqual(callers('beginReminderOperation'), ['src/store/reminderController.ts'])
+  assert.match(stripComments(read('src/hooks/useReminder.ts')), /createReminderController\(/)
+  assert.match(stripComments(read('app/onboarding.tsx')), /finishOnboarding\(/)
 })
 
 test('ホームのボタンは「記録する」／「編集する」（UI仕様 3章）、英語は Save／Edit', () => {
@@ -139,9 +146,9 @@ test('一言の入力欄に maxLength を付けない（長い一言を切り詰
   }
 })
 
-test('app.json の version は 1.2.1（19b 評価の指摘修正で PATCH を上げる）', () => {
+test('app.json の version は 1.2.2（19b 再評価 R1・R2 の修正で PATCH を上げる）', () => {
   const appJson = JSON.parse(read('app.json'))
-  assert.equal(appJson.expo.version, '1.2.1')
+  assert.equal(appJson.expo.version, '1.2.2')
 })
 
 test('カレンダーのセルは絵文字（DEFAULT_EMOJI_SET）、ポップアップは顔文字', () => {

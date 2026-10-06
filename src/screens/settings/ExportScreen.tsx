@@ -60,7 +60,8 @@ export const ExportScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       if (!aliveRef.current) return
       await shareCsvFile(uri, s.shareDialogTitle)
       if (!aliveRef.current) return
-      // 共有した／キャンセルしたを区別できないため、共有画面が閉じたあとに「作成しました」を出す
+      // 共有した／キャンセルしたを区別できない（expo-sharing・RN Share とも Android では結果を返さない）ため、
+      // 共有画面が閉じたあとに「バックアップファイルを作成しました」を出す（2026-10-07 オーナー回答）
       showToast(exceedsImportLimit(csv) ? `${s.toastExported}\n${s.exportTooLarge}` : s.toastExported)
     } catch {
       if (aliveRef.current) setFailed(true)

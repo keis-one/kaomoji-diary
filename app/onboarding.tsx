@@ -10,13 +10,13 @@ import {
   ScrollView,
 } from 'react-native'
 import { router } from 'expo-router'
-import { useSettings } from '@/hooks/useSettings'
 import {
   isNotificationsSupported,
   requestNotificationPermissions,
   scheduleReminder,
 } from '@/utils/notifications'
-import { useDiaryStore } from '@/store'
+import { diaryStore } from '@/store'
+import { finishOnboarding } from '@/store/reminderController'
 import type { Language } from '@/types'
 import { t } from '@/i18n/strings'
 
@@ -42,7 +42,6 @@ const dotStyles = StyleSheet.create({
 })
 
 export default function OnboardingScreen() {
-  const { completeOnboarding } = useSettings()
   const [step, setStep] = useState<Step>('language')
   const [language, setLanguage] = useState<Language>('ja')
   const [questionLabel, setQuestionLabel] = useState('')
@@ -67,32 +66,21 @@ export default function OnboardingScreen() {
     if (finishing) return
     setFinishing(true)
     setSaveFailed(false)
-    try {
-      await completeOnboarding(questionLabel.trim(), language, reminderEnabled, reminderTime)
-    } catch {
-      // 保存できなかった → 先に進まず、もう一度押せるようにする
-      setSaveFailed(true)
-      setFinishing(false)
-      return
-    }
-
-    // リマインダーが ON かつネイティブアプリの場合、通知をスケジュール
-    if (reminderEnabled && isNotificationsSupported) {
-      const granted = await requestNotificationPermissions()
-      if (granted) {
-        // completeOnboarding で生成された question を store から取得して通知スケジュール
-        // （completeOnboarding は保存に成功してからメモリに反映するので、await の後に参照できる）
-        const { settings, scheduleQuestionReminder } = useDiaryStore.getState()
-        const question = settings.questions[0]
-        if (question) {
-          // 予約は通知の整理・リセットと同じ列で行う（ID がストアに入る前に整理で消されないように）
-          await scheduleQuestionReminder(question.id, (q) => scheduleReminder(q, language))
-        }
-      }
-    }
-
+    // 手順は src/store/reminderController.ts の finishOnboarding（許可の確認の間にリセット等が入ったら、
+    // 予約も画面の移動もしない。Sprint 19b 再評価 R2）
+    const result = await finishOnboarding(
+      {
+        store: diaryStore,
+        isSupported: isNotificationsSupported,
+        requestPermission: requestNotificationPermissions,
+        schedule: scheduleReminder,
+        navigateHome: () => router.replace('/(tabs)/'),
+      },
+      { label: questionLabel.trim(), language, reminderEnabled, reminderTime },
+    )
     setFinishing(false)
-    router.replace('/(tabs)/')
+    // 保存できなかった → 先に進まず、もう一度押せるようにする
+    if (result === 'saveFailed') setSaveFailed(true)
   }
 
   // ── STEP 1: 言語 ──────────────────────────────────────────

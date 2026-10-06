@@ -49,7 +49,44 @@ export interface DiaryStoreDeps {
   createQuestion?: (label: string) => Question
   /** 1つのキーに入れる文字数の上限（テストで小さくする） */
   chunkChars?: number
+  /**
+   * 通知API（解除・一覧・予約）を待つ上限（ミリ秒）。応答しないときは失敗として扱い、
+   * 通知の列・全データリセットが待ち続けないようにする。既定 10 秒
+   */
+  notificationTimeoutMs?: number
 }
+
+export class NotificationTimeoutError extends Error {
+  constructor() {
+    super('通知APIが時間内に応答しなかった')
+    this.name = 'NotificationTimeoutError'
+  }
+}
+
+/** 時間内に終わらなければ失敗にする。onLate は時間切れの後で値が届いたときに呼ぶ（予約した通知の後始末用） */
+const withTimeout = <T>(p: Promise<T>, ms: number, onLate?: (v: T) => void): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      reject(new NotificationTimeoutError())
+    }, ms)
+    p.then(
+      (v) => {
+        if (timedOut) onLate?.(v)
+        else {
+          clearTimeout(timer)
+          resolve(v)
+        }
+      },
+      (e) => {
+        if (!timedOut) {
+          clearTimeout(timer)
+          reject(e)
+        }
+      },
+    )
+  })
 
 export class StorageWriteError extends Error {
   constructor(cause: unknown) {
@@ -96,31 +133,58 @@ export interface DiaryState extends PersistedData {
   /** 並んでいる書き込みがすべて終わるまで待つ */
   flushWrites: () => Promise<void>
 
-  // ── 通知の予約（予約・整理・リセットの順番と世代をストアで管理する） ──
+  // ── 通知の予約（予約・OFF・時刻変更・オンボーディング・リセット・整理の入口） ──
   /**
-   * 通知の操作の世代。全データリセットのたびに 1 増える。
-   * 操作を始めた時点の世代を覚えておき、終わった時点で変わっていたら（＝途中でリセットされたら）結果を捨てる。
+   * 通知の操作を始める（ON・OFF・時刻変更・オンボーディングのリマインダー）。許可の確認などを待つ**前**に呼ぶ。
+   * 問いごとの「最新の操作の番号」を進め、全データリセットの世代と一緒に操作券（ticket）として返す。
+   * 後から同じ問いに別の操作が始まる（別の画面・作り直されたフックからでも）か、リセットされると、
+   * その券は古くなり、予約・OFF は行われない（予約済みなら解除して結果を捨てる）。
    */
+  beginReminderOperation: (questionId: string, kind: ReminderOperationKind) => ReminderTicket
+  /** 全データリセットの世代（リセットのたびに 1 増える） */
   getNotificationEpoch: () => number
+  /** 券がまだ最新か（同じ問いの最新の操作で、リセットの世代も同じ） */
+  isReminderOperationCurrent: (ticket: ReminderTicket) => boolean
+  /** 券の操作を終える（許可されなかった等で予約しなかったとき）。最新の券なら「処理中」を外す */
+  endReminderOperation: (ticket: ReminderTicket) => void
+  /** 同じ問いで、まだ終わっていない最新の操作の種類（無ければ null） */
+  pendingReminderOperation: (questionId: string) => ReminderOperationKind | null
   /**
-   * 問いのリマインダーを予約する（ON・時刻変更・オンボーディング）。
-   * 通知の整理（A3）と同じ列に並べて1つずつ行うので、予約した通知の ID がストアに入る前に
-   * 整理で消されることはない。予約し終えた時点で、操作を始めた後にリセットされていた・問いが無くなった・
-   * isLatest() が false（後から別の操作が入った）なら、予約した通知を解除して結果を捨てる。
+   * 問いのリマインダーを予約する。通知の整理（A3）と同じ列に並べて1つずつ行うので、予約した通知の ID が
+   * ストアに入る前に整理で消されることはない。券が古い・問いが無くなったときは予約せず、予約後に古くなっていたら
+   * 予約した通知を解除して結果を捨てる。reminderTime を渡すとその時刻で予約し、保存値も同じにする
    */
   scheduleQuestionReminder: (
-    questionId: string,
+    ticket: ReminderTicket,
     schedule: (q: Question) => Promise<string | undefined>,
-    opts?: { epoch?: number; reminderTime?: string; isLatest?: () => boolean },
+    opts?: { reminderTime?: string },
   ) => Promise<'scheduled' | 'discarded' | 'notScheduled'>
-  /** 問いのリマインダーを OFF にする（通知の解除は失敗したら解除待ちへ） */
-  disableQuestionReminder: (questionId: string, opts?: { epoch?: number; isLatest?: () => boolean }) => Promise<void>
+  /** 問いのリマインダーを OFF にする（通知の解除は失敗したら解除待ちへ）。券が古ければ何もしない */
+  disableQuestionReminder: (ticket: ReminderTicket) => Promise<'disabled' | 'discarded'>
 }
 
 export type DiaryStore = StoreApi<DiaryState>
 
+export type ReminderOperationKind = 'on' | 'off' | 'time' | 'onboarding'
+
+/** 通知の操作券（beginReminderOperation が返す）。ストアの外では中身を変えない */
+export interface ReminderTicket {
+  readonly questionId: string
+  readonly kind: ReminderOperationKind
+  /** 問いごとの操作の番号 */
+  readonly seq: number
+  /** 全データリセットの世代 */
+  readonly epoch: number
+}
+
 export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
-  const { storage, notifier } = deps
+  const { storage } = deps
+  const timeoutMs = deps.notificationTimeoutMs ?? 10_000
+  // 通知APIはすべて時間制限つきで呼ぶ（応答しないときは失敗として扱う。解除なら解除待ちに残る）
+  const notifier = {
+    cancel: (id: string) => withTimeout(deps.notifier.cancel(id), timeoutMs),
+    listScheduledIds: () => withTimeout(deps.notifier.listScheduledIds(), timeoutMs),
+  }
   const makeQuestion = deps.createQuestion ?? createDefaultQuestion
 
   let writeChain: Promise<unknown> = Promise.resolve()
@@ -132,6 +196,9 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
     return run
   }
   let notificationEpoch = 0
+  // 問いごとの最新の操作（番号・種類・終わったか）。リセットで空にする
+  let operationSeq = 0
+  const latestOperation = new Map<string, { seq: number; kind: ReminderOperationKind; done: boolean }>()
   /** 書き込みを1本の列に並べる */
   const enqueue = <T>(task: () => Promise<T>): Promise<T> => {
     const run = writeChain.then(task, task)
@@ -229,8 +296,9 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
           pendingNotificationCancelIds: [...new Set([...s.pendingNotificationCancelIds, ...currentNotificationIds(s)])],
           notificationCleanupPending: s.notificationCleanupPending,
         }), () => {
-          // リセット前に始まった通知の予約は、終わった時点で結果を捨てる（予約した通知は解除する）
+          // リセット前に始まった通知の操作は、すべて古い券になる（予約した通知は解除して結果を捨てる）
           notificationEpoch++
+          latestOperation.clear()
         })
         // 保存に成功してから解除する。解除に失敗しても、リセットは取り消さない（次回以降の起動で再試行）
         await get().processNotificationMaintenance()
@@ -293,56 +361,91 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
 
       getNotificationEpoch: () => notificationEpoch,
 
-      scheduleQuestionReminder: (questionId, schedule, opts = {}) => {
-        const epoch = opts.epoch ?? notificationEpoch
+      beginReminderOperation: (questionId, kind) => {
+        const seq = ++operationSeq
+        latestOperation.set(questionId, { seq, kind, done: false })
+        return { questionId, kind, seq, epoch: notificationEpoch }
+      },
+
+      isReminderOperationCurrent: (t) =>
+        t.epoch === notificationEpoch && latestOperation.get(t.questionId)?.seq === t.seq,
+
+      endReminderOperation: (t) => {
+        const cur = latestOperation.get(t.questionId)
+        if (cur && cur.seq === t.seq) cur.done = true
+      },
+
+      pendingReminderOperation: (questionId) => {
+        const cur = latestOperation.get(questionId)
+        return cur && !cur.done ? cur.kind : null
+      },
+
+      scheduleQuestionReminder: (ticket, schedule, opts = {}) => {
+        const questionId = ticket.questionId
         return runNotificationTask(async () => {
-          const isStale = () =>
-            epoch !== notificationEpoch ||
-            !get().settings.questions.some((q) => q.id === questionId) ||
-            (opts.isLatest ? !opts.isLatest() : false)
-          if (isStale()) return 'discarded' as const
-          const question = get().settings.questions.find((q) => q.id === questionId) as Question
-          if (question.notificationId) await get().cancelNotificationOrQueue(question.notificationId)
-          const target: Question = opts.reminderTime ? { ...question, reminderTime: opts.reminderTime } : question
-          const id = await schedule(target)
-          if (isStale()) {
-            if (id) await get().cancelNotificationOrQueue(id)
-            // 古い ID は上で解除済み。問いが残っていれば ID を外しておく（ON のまま ID 無しにはしない）
-            if (get().settings.questions.some((q) => q.id === questionId && q.notificationId === question.notificationId && question.notificationId)) {
-              get().updateQuestion(questionId, { notificationId: undefined })
+          try {
+            const isStale = () =>
+              !get().isReminderOperationCurrent(ticket) || !get().settings.questions.some((q) => q.id === questionId)
+            if (isStale()) return 'discarded' as const
+            const question = get().settings.questions.find((q) => q.id === questionId) as Question
+            if (question.notificationId) await get().cancelNotificationOrQueue(question.notificationId)
+            // 予約する時刻: 指定があればその時刻、無ければ予約する時点の保存値
+            const target: Question = opts.reminderTime ? { ...question, reminderTime: opts.reminderTime } : question
+            // 時間切れの後で予約が終わったら、その通知は使わないので解除する（解除できなければ解除待ちへ）
+            let id: string | undefined
+            try {
+              id = await withTimeout(schedule(target), timeoutMs, (late) => {
+                if (late) void get().cancelNotificationOrQueue(late)
+              })
+            } catch {
+              id = undefined // 予約できなかった（例外・時間切れ）→ 予約なしとして扱う
             }
-            return 'discarded' as const
+            if (isStale()) {
+              if (id) await get().cancelNotificationOrQueue(id)
+              // 古い ID は上で解除済み。問いが残っていれば ID を外しておく（解除した ID を持ち続けない）
+              const cur = get().settings.questions.find((q) => q.id === questionId)
+              if (cur && question.notificationId && cur.notificationId === question.notificationId) {
+                get().updateQuestion(questionId, { notificationId: undefined })
+              }
+              return 'discarded' as const
+            }
+            if (!id) {
+              if (question.notificationId) get().updateQuestion(questionId, { notificationId: undefined })
+              return 'notScheduled' as const
+            }
+            get().updateQuestion(questionId, {
+              reminderEnabled: true,
+              notificationId: id,
+              reminderTime: target.reminderTime, // 保存値と予約した時刻を必ず一致させる
+            })
+            return 'scheduled' as const
+          } finally {
+            get().endReminderOperation(ticket)
           }
-          if (!id) {
-            if (question.notificationId) get().updateQuestion(questionId, { notificationId: undefined })
-            return 'notScheduled' as const
-          }
-          get().updateQuestion(questionId, {
-            reminderEnabled: true,
-            notificationId: id,
-            ...(opts.reminderTime ? { reminderTime: opts.reminderTime } : {}),
-          })
-          return 'scheduled' as const
         })
       },
 
-      disableQuestionReminder: (questionId, opts = {}) => {
-        const epoch = opts.epoch ?? notificationEpoch
-        return runNotificationTask(async () => {
-          const question = get().settings.questions.find((q) => q.id === questionId)
-          if (!question) return
-          if (question.notificationId) await get().cancelNotificationOrQueue(question.notificationId)
-          if (epoch !== notificationEpoch || (opts.isLatest && !opts.isLatest())) {
-            // 後から別の操作（ON・リセット）が入った → 状態はその操作に任せる。解除した ID だけ外す
-            const cur = get().settings.questions.find((q) => q.id === questionId)
-            if (cur && cur.notificationId === question.notificationId && question.notificationId) {
-              get().updateQuestion(questionId, { notificationId: undefined })
+      disableQuestionReminder: (ticket) =>
+        runNotificationTask(async () => {
+          try {
+            if (!get().isReminderOperationCurrent(ticket)) return 'discarded' as const
+            const question = get().settings.questions.find((q) => q.id === ticket.questionId)
+            if (!question) return 'discarded' as const
+            if (question.notificationId) await get().cancelNotificationOrQueue(question.notificationId)
+            if (!get().isReminderOperationCurrent(ticket)) {
+              // 解除の間に別の操作が始まった → 状態はその操作に任せる。解除した ID だけ外す
+              const cur = get().settings.questions.find((q) => q.id === ticket.questionId)
+              if (cur && question.notificationId && cur.notificationId === question.notificationId) {
+                get().updateQuestion(ticket.questionId, { notificationId: undefined })
+              }
+              return 'discarded' as const
             }
-            return
+            get().updateQuestion(ticket.questionId, { reminderEnabled: false, notificationId: undefined })
+            return 'disabled' as const
+          } finally {
+            get().endReminderOperation(ticket)
           }
-          get().updateQuestion(questionId, { reminderEnabled: false, notificationId: undefined })
-        })
-      },
+        }),
 
       processNotificationMaintenance: async () => {
         if (!get().hydrated) return

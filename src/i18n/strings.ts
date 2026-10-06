@@ -18,7 +18,7 @@ const ja = {
   toastRecorded: '記録しました',
   toastSaved: '保存しました',
   toastDeleted: '記録を削除しました',
-  toastExported: 'CSVファイルを作成しました',
+  toastExported: 'バックアップファイルを作成しました',
   toastImported: (n: number) => `${n} 件の記録を読み込みました`,
   toastCopied: 'コピーしました',
 
@@ -169,7 +169,7 @@ const en: Strings = {
   toastRecorded: 'Saved',
   toastSaved: 'Updated',
   toastDeleted: 'Record deleted',
-  toastExported: 'CSV file created',
+  toastExported: 'Backup file created',
   toastImported: (n) => `Imported ${n} ${n === 1 ? 'record' : 'records'}`,
   toastCopied: 'Copied',
 

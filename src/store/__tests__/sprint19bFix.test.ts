@@ -32,7 +32,7 @@ test('#1 整理（一覧の取得待ち）の最中に ON にしても、ID が�
   const maintenance = s.getState().processNotificationMaintenance()
   await tick()
   // ON 操作（予約すると一覧には入るが、ID が返るのは後）
-  const on = s.getState().scheduleQuestionReminder('q1', delayedSchedule(notifier, 'n_new', scheduleGate.promise))
+  const on = s.getState().scheduleQuestionReminder(s.getState().beginReminderOperation('q1', 'on'), delayedSchedule(notifier, 'n_new', scheduleGate.promise))
   await tick()
   listGate.resolve()
   await tick()
@@ -65,7 +65,7 @@ test('#1 先に ON の予約が始まっていたら、整理は予約が終わ�
   notifier.failList = false
 
   const scheduleGate = deferred()
-  const on = s.getState().scheduleQuestionReminder(qid, delayedSchedule(notifier, 'n_new', scheduleGate.promise))
+  const on = s.getState().scheduleQuestionReminder(s.getState().beginReminderOperation(qid, 'on'), delayedSchedule(notifier, 'n_new', scheduleGate.promise))
   await tick()
   const maintenance = s.getState().processNotificationMaintenance()
   await tick()
@@ -84,9 +84,9 @@ test('#2 リセット前に始めた ON の予約は、リセット後に終わ�
   const notifier = new MockNotifier()
   const s = await boot(storage, notifier)
 
-  const epoch = s.getState().getNotificationEpoch() // ON 操作を始めた時点
+  const ticket = s.getState().beginReminderOperation('q1', 'on') // ON 操作を始めた時点
   const gate = deferred()
-  const on = s.getState().scheduleQuestionReminder('q1', delayedSchedule(notifier, 'n_race', gate.promise), { epoch })
+  const on = s.getState().scheduleQuestionReminder(ticket, delayedSchedule(notifier, 'n_race', gate.promise))
   await tick()
   await s.getState().resetAllData()
   gate.resolve()
@@ -100,7 +100,7 @@ test('#2 リセット前に始めた ON の予約は、リセット後に終わ�
   // リセット後の新しい問いの通知は残る
   await s.getState().completeOnboarding('運動', 'ja', true)
   const newId = s.getState().settings.activeQuestionId
-  const r = await s.getState().scheduleQuestionReminder(newId, async () => {
+  const r = await s.getState().scheduleQuestionReminder(s.getState().beginReminderOperation(newId, 'on'), async () => {
     notifier.schedule('n_after')
     return 'n_after'
   })
@@ -113,15 +113,11 @@ test('#2 許可の確認を待っている間（予約の前）にリセット�
   storage.putState(freeState([]))
   const notifier = new MockNotifier()
   const s = await boot(storage, notifier)
-  const epoch = s.getState().getNotificationEpoch()
+  const ticket = s.getState().beginReminderOperation('q1', 'on')
   await s.getState().resetAllData()
   await s.getState().completeOnboarding('禁煙', 'ja', false)
   const calls: string[] = []
-  const r = await s.getState().scheduleQuestionReminder(
-    s.getState().settings.activeQuestionId,
-    delayedSchedule(notifier, 'n_x', Promise.resolve(), calls),
-    { epoch },
-  )
+  const r = await s.getState().scheduleQuestionReminder(ticket, delayedSchedule(notifier, 'n_x', Promise.resolve(), calls))
   assert.equal(r, 'discarded')
   assert.deepEqual(calls, [])
   assert.deepEqual([...notifier.scheduled], [])
@@ -135,9 +131,9 @@ test('#2 リセット前に始めた OFF 操作は、リセット後の状態を
   const notifier = new MockNotifier()
   notifier.schedule('n1')
   const s = await boot(storage, notifier)
-  const epoch = s.getState().getNotificationEpoch()
+  const ticket = s.getState().beginReminderOperation('q1', 'off')
   await s.getState().resetAllData()
-  await s.getState().disableQuestionReminder('q1', { epoch })
+  assert.equal(await s.getState().disableQuestionReminder(ticket), 'discarded')
   assert.deepEqual(s.getState().settings.questions, [])
   assert.deepEqual([...notifier.scheduled], [])
 })
@@ -147,14 +143,10 @@ test('予約の途中で後から別の操作（OFF）が入ったら、予約�
   storage.putState(freeState([]))
   const notifier = new MockNotifier()
   const s = await boot(storage, notifier)
-  let latest = 1
   const gate = deferred()
-  const on = s.getState().scheduleQuestionReminder('q1', delayedSchedule(notifier, 'n_on', gate.promise), {
-    isLatest: () => latest === 1,
-  })
+  const on = s.getState().scheduleQuestionReminder(s.getState().beginReminderOperation('q1', 'on'), delayedSchedule(notifier, 'n_on', gate.promise))
   await tick()
-  latest = 2
-  const off = s.getState().disableQuestionReminder('q1', { isLatest: () => latest === 2 })
+  const off = s.getState().disableQuestionReminder(s.getState().beginReminderOperation('q1', 'off'))
   gate.resolve()
   assert.equal(await on, 'discarded')
   await off
@@ -173,7 +165,7 @@ test('時刻の変更: 古い通知を解除して新しい時刻で予約し直
   const s = await boot(storage, notifier)
   let scheduledTime = ''
   const r = await s.getState().scheduleQuestionReminder(
-    'q1',
+    s.getState().beginReminderOperation('q1', 'time'),
     async (qq) => {
       scheduledTime = qq.reminderTime
       notifier.schedule('n_7')
