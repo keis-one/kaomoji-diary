@@ -1,22 +1,12 @@
-import { useState, useEffect } from 'react'
 import { useDiaryStore } from '@/store'
 
-export const useHydration = (): boolean => {
-  const [hydrated, setHydrated] = useState(() => useDiaryStore.persist.hasHydrated())
-
-  useEffect(() => {
-    if (useDiaryStore.persist.hasHydrated()) {
-      setHydrated(true)
-      return
-    }
-    const unsub = useDiaryStore.persist.onFinishHydration(() => setHydrated(true))
-    // AsyncStorage が応答しない場合のフォールバック（最大1秒待って進む）
-    const timer = setTimeout(() => setHydrated(true), 1000)
-    return () => {
-      if (typeof unsub === 'function') unsub()
-      clearTimeout(timer)
-    }
-  }, [])
-
-  return hydrated
+/**
+ * 保存データの読み込みが終わったか。
+ * 以前は「1秒で読み込みが終わらなければ先に進む」逃げ道があったが、読み込み前に進むと
+ * オンボーディング等で保存データを上書きするおそれがあるため、読み込みが終わるまで待つ。
+ */
+export const useHydration = (): { hydrated: boolean; hydrationError: boolean } => {
+  const hydrated = useDiaryStore((s) => s.hydrated)
+  const hydrationError = useDiaryStore((s) => s.hydrationError)
+  return { hydrated, hydrationError }
 }

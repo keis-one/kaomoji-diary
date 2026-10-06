@@ -14,6 +14,6 @@ export const scheduleReminder = async (
 
 export const cancelReminder = async (_notificationId: string): Promise<void> => {}
 
-export const cancelAllReminders = async (): Promise<void> => {}
+export const listScheduledNotificationIds = async (): Promise<string[]> => []
 
 export const addNotificationTapListener = (_onTap: () => void): (() => void) => () => {}

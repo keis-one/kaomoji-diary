@@ -20,6 +20,9 @@ import { shareEntry } from '@/utils/share'
 import { getDayOfWeek, getWhatDay } from '@/utils/dayInfo'
 import type { AppColors } from '@/constants/colors'
 import type { KaomojiLevel } from '@/types'
+import { checkCommentEdit } from '@/domain/dayEditor'
+import { homeButtonMode, shouldShowStreak } from '@/domain/entries'
+import { t } from '@/i18n/strings'
 
 export default function HomeScreen() {
   const { todayEntry, record } = useDiary()
@@ -29,17 +32,33 @@ export default function HomeScreen() {
   const [level, setLevel] = useState<KaomojiLevel | null>(todayEntry?.level ?? null)
   const [comment, setComment] = useState(todayEntry?.comment ?? '')
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
 
+  // カレンダーで今日の記録を保存・削除したときも、この表示に反映する
   React.useEffect(() => {
     setLevel(todayEntry?.level ?? null)
     setComment(todayEntry?.comment ?? '')
     setSaved(false)
+    setSaveFailed(false)
   }, [todayEntry, settings.activeQuestionId])
 
-  const handleSave = () => {
-    if (!level) return
-    record(level, comment)
-    setSaved(true)
+  // 一言は変更したときだけ 100 文字の上限を当てはめる（読み込みで入った長い一言はそのまま保存できる。U6）
+  const commentCheck = checkCommentEdit(todayEntry?.comment ?? '', comment)
+  const canSave = !!level && commentCheck.ok && !saving
+
+  const handleSave = async () => {
+    if (!level || !canSave) return
+    setSaving(true)
+    setSaveFailed(false)
+    try {
+      await record(level, comment)
+      setSaved(true)
+    } catch {
+      setSaveFailed(true)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleShare = async () => {
@@ -105,19 +124,22 @@ export default function HomeScreen() {
             placeholderTextColor={colors.textMuted}
             value={comment}
             onChangeText={setComment}
-            maxLength={100}
             multiline
           />
+          {commentCheck.tooLong && (
+            <Text style={styles.errorText}>{t(settings.language).commentTooLong(commentCheck.length)}</Text>
+          )}
+          {saveFailed && <Text style={styles.errorText}>{t(settings.language).homeSaveFailed}</Text>}
 
           <Pressable
-            style={[styles.saveBtn, !level && styles.saveBtnDisabled]}
+            style={[styles.saveBtn, !canSave && styles.saveBtnDisabled]}
             onPress={handleSave}
-            disabled={!level}
+            disabled={!canSave}
           >
             <Text style={styles.saveBtnText}>
               {settings.language === 'ja'
-                ? (todayEntry ? '更新' : '記録')
-                : (todayEntry ? 'Update' : 'Save')}
+                ? (homeButtonMode(todayEntry) === 'edit' ? '更新' : '記録')
+                : (homeButtonMode(todayEntry) === 'edit' ? 'Update' : 'Save')}
             </Text>
           </Pressable>
 
@@ -129,7 +151,7 @@ export default function HomeScreen() {
             </Pressable>
           )}
 
-          {stats.currentStreak > 1 && (
+          {shouldShowStreak(stats.currentStreak) && (
             <View style={styles.streakBadge}>
               <Text style={styles.streakText}>
                 {settings.language === 'ja'
@@ -165,6 +187,7 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   },
   saveBtn: { width: '100%', paddingVertical: 15, borderRadius: 12, backgroundColor: c.accent, alignItems: 'center' },
   saveBtnDisabled: { backgroundColor: c.border },
+  errorText: { width: '100%', fontSize: 13, color: c.danger },
   saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   shareBtn: { width: '100%', paddingVertical: 12, borderRadius: 12, backgroundColor: c.accentLight, alignItems: 'center', borderWidth: 1, borderColor: c.accent },
   shareBtnText: { color: c.accentDark, fontSize: 15, fontWeight: '600' },

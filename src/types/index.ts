@@ -34,6 +34,17 @@ export interface DiaryEntry {
   comment: string
 }
 
+/**
+ * preview 版で2つ目以降だった問い（無料版では設定から外した問い）。画面には出さない。
+ * 書き出し（F51）の question_no と question に使う（製品仕様 Sprint 19a 追補 A2）。
+ */
+export interface RetiredQuestion {
+  id: string
+  label: string
+  /** 元の並び順（2つ目 = 2、3つ目 = 3 …） */
+  order: number
+}
+
 export interface DiaryStats {
   averageLevel: number
   maxLevel: KaomojiLevel

@@ -1,11 +1,11 @@
 import { useRef } from 'react'
 import { Alert } from 'react-native'
 import { useSettings } from './useSettings'
+import { useDiaryStore } from '@/store'
 import {
   isNotificationsSupported,
   requestNotificationPermissions,
   scheduleReminder,
-  cancelReminder,
 } from '@/utils/notifications'
 
 export const useReminder = () => {
@@ -15,7 +15,10 @@ export const useReminder = () => {
   // ON操作の非同期処理（許可確認・スケジューリング）が完了する前に
   // 別のtoggle操作が入ると、後から完了した処理が状態を上書きしてしまう
   // 競合状態を防ぐため、完了時にまだ自分が最新の操作かを確認する。
+  // 時刻の変更も同じ記録を使い、ON/OFF・時刻変更のうち最後の操作の結果だけを残す。
   const latestToggleRef = useRef(new Map<string, symbol>())
+  // 通知の解除は、失敗したら「解除待ちの通知ID」に入れて次回以降の起動で再試行する（製品仕様 Sprint 19a 追補 A1）
+  const cancelReminder = useDiaryStore((s) => s.cancelNotificationOrQueue)
 
   const toggleReminder = async (questionId: string, enabled: boolean) => {
     const question = settings.questions.find((q) => q.id === questionId)
@@ -90,11 +93,20 @@ export const useReminder = () => {
 
     // リマインダーが ON の場合は通知を再スケジュール
     if (question.reminderEnabled && isNotificationsSupported) {
-      if (question.notificationId) {
-        await cancelReminder(question.notificationId)
+      const token = Symbol()
+      latestToggleRef.current.set(questionId, token)
+      // 予約し直す前の通知IDは、ストアの最新の値を使う（連続入力で古い ID を解除し損ねないように）
+      const current = useDiaryStore.getState().settings.questions.find((q) => q.id === questionId)
+      if (current?.notificationId) {
+        await cancelReminder(current.notificationId)
       }
       const updatedQuestion = { ...question, reminderTime: time }
       const notificationId = await scheduleReminder(updatedQuestion, settings.language)
+      if (latestToggleRef.current.get(questionId) !== token) {
+        // 待っている間に別の操作が入った → この通知は使わない
+        if (notificationId) await cancelReminder(notificationId)
+        return
+      }
       updateQuestion(questionId, { notificationId })
     }
   }

@@ -17,13 +17,16 @@ import {
   getDaysInMonth,
   getMonthStartOffset,
   WEEKDAY_LABELS,
-  isDateToday,
+  todayIso,
 } from '@/utils/date'
-import { DEFAULT_KAOMOJI_SET } from '@/constants/kaomoji'
+import { DEFAULT_EMOJI_SET } from '@/constants/kaomoji'
 import type { KaomojiLevel } from '@/types'
+import { dayTapAction } from '@/domain/dayEditor'
+import { submitDayEntry, deleteDayEntry } from '@/domain/dayActions'
 
 export default function CalendarScreen() {
-  const addOrUpdateEntry = useDiaryStore((s) => s.addOrUpdateEntry)
+  const saveEntry = useDiaryStore((s) => s.saveEntry)
+  const deleteEntry = useDiaryStore((s) => s.deleteEntry)
   const entries = useDiaryStore((s) => s.entries)
   const entryMap = useMemo(
     () => Object.fromEntries(entries.map((e) => [`${e.questionId}:${e.date}`, e])),
@@ -51,21 +54,32 @@ export default function CalendarScreen() {
     else setViewMonth((m) => m + 1)
   }
 
+  const todayStr = todayIso()
+
+  // 今日と過去日は入力・編集ポップアップを開く（範囲の制限なし）。未来の日は何もしない（U8）
   const openDay = (date: string) => {
+    if (dayTapAction(date, todayIso()) !== 'open') return
     setSelectedDate(date)
     setPopupVisible(true)
   }
 
-  const handleSave = (level: KaomojiLevel, comment: string) => {
-    if (!selectedDate || !activeQuestion) return
-    addOrUpdateEntry(activeQuestion.id, level, comment, selectedDate)
-  }
+  const handleSubmit = (level: KaomojiLevel, comment: string) =>
+    submitDayEntry(saveEntry, {
+      date: selectedDate as string,
+      questionId: activeQuestion?.id ?? '',
+      level,
+      comment,
+      hadEntry: !!selectedEntry,
+    })
+
+  const handleDelete = () => deleteDayEntry(deleteEntry, selectedDate as string, activeQuestion?.id ?? '')
 
   const selectedEntry = selectedDate && activeQuestion
     ? getEntry(selectedDate, activeQuestion.id)
     : undefined
 
-  const emojiSet = activeQuestion?.kaomojiSet ?? DEFAULT_KAOMOJI_SET
+  // セルには絵文字、ポップアップには顔文字を出す（UI仕様 4章・要件定義書 8章のハイブリッド方式）
+  const emojiSet = DEFAULT_EMOJI_SET
   const { colors } = useTheme()
   const styles = makeStyles(colors)
 
@@ -97,12 +111,14 @@ export default function CalendarScreen() {
           {days.map((date) => {
             const entry = activeQuestion ? getEntry(date, activeQuestion.id) : undefined
             const dayNum = parseInt(date.split('-')[2])
-            const isToday = isDateToday(date)
+            const isToday = date === todayStr
+            const isFuture = dayTapAction(date, todayStr) === 'none'
             return (
               <Pressable
                 key={date}
-                style={[styles.cell, isToday && styles.cellToday]}
+                style={[styles.cell, isToday && styles.cellToday, isFuture && styles.cellFuture]}
                 onPress={() => openDay(date)}
+                disabled={isFuture}
               >
                 <Text style={[styles.dayNum, isToday && styles.dayNumToday]}>
                   {dayNum}
@@ -125,7 +141,8 @@ export default function CalendarScreen() {
         kaomojiSet={activeQuestion?.kaomojiSet ?? settings.questions[0]?.kaomojiSet ?? { 1: '', 2: '', 3: '', 4: '', 5: '' }}
         questionLabel={activeQuestion?.label ?? ''}
         language={settings.language}
-        onSave={handleSave}
+        onSubmit={handleSubmit}
+        onDelete={handleDelete}
         onClose={() => setPopupVisible(false)}
       />
     </SafeAreaView>
@@ -153,6 +170,7 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
     borderRightWidth: 1, borderBottomWidth: 1, borderColor: c.border,
   },
   cellToday: { backgroundColor: c.accentLight },
+  cellFuture: { opacity: 0.35 },
   dayNum: { fontSize: 12, color: c.textSecondary, fontWeight: '500' },
   dayNumToday: { color: c.accentDark, fontWeight: '700' },
   emoji: { fontSize: 18, lineHeight: 22, color: c.text },

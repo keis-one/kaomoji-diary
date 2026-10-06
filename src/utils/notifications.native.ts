@@ -82,9 +82,10 @@ export const cancelReminder = async (notificationId: string): Promise<void> => {
   await Notifications.cancelScheduledNotificationAsync(notificationId)
 }
 
-/** すべてのスケジュール済み通知をキャンセルする */
-export const cancelAllReminders = async (): Promise<void> => {
-  await Notifications.cancelAllScheduledNotificationsAsync()
+/** アプリが予約している通知の ID の一覧（通知の整理に使う） */
+export const listScheduledNotificationIds = async (): Promise<string[]> => {
+  const list = await Notifications.getAllScheduledNotificationsAsync()
+  return list.map((n) => n.identifier)
 }
 
 /** 通知タップ時のリスナーを登録し、解除関数を返す */

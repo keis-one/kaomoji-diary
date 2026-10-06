@@ -9,7 +9,7 @@
  *
  * React Native に依存しないため、Node のテストランナーで直接テストできる（__tests__ 参照）。
  */
-import type { Question, UserSettings } from '@/types'
+import type { Question, RetiredQuestion, UserSettings } from '@/types'
 import { DEFAULT_KAOMOJI_SET } from '@/constants/kaomoji'
 import { QUESTION_LIMIT } from '@/constants/app'
 
@@ -21,6 +21,11 @@ export interface FreeEditionNormalizeResult {
    * 呼び出し側でキャンセルしないと、表示されない問いの通知が届き続ける。
    */
   orphanedNotificationIds: string[]
+  /**
+   * 無効にした問い（2つ目以降）の問いID・文言・元の並び順（2つ目 = 2 …）。
+   * 書き出しの question_no と question に使うため、保存データに残す（製品仕様 Sprint 19a 追補 A2）。
+   */
+  retiredQuestions: RetiredQuestion[]
 }
 
 /**
@@ -53,8 +58,15 @@ export const normalizeSettingsForFreeEdition = (
       theme: settings.theme,
     },
     orphanedNotificationIds: dropped
-      .map((q) => q.notificationId)
+      .map((q) => q?.notificationId)
       .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    retiredQuestions: dropped
+      .map((q, i) => ({
+        id: typeof q?.id === 'string' ? q.id : '',
+        label: typeof q?.label === 'string' ? q.label : '',
+        order: QUESTION_LIMIT + i + 1,
+      }))
+      .filter((r) => r.id.length > 0),
   }
 }
 
@@ -65,10 +77,10 @@ export const normalizeSettingsForFreeEdition = (
 export const mergePersistedState = <T extends { settings: UserSettings }>(
   persisted: unknown,
   current: T,
-): { state: T; orphanedNotificationIds: string[] } => {
+): { state: T; orphanedNotificationIds: string[]; retiredQuestions: RetiredQuestion[] } => {
   const p = (persisted && typeof persisted === 'object' ? persisted : {}) as Partial<T>
-  const { settings, orphanedNotificationIds } = mergePersistedSettings(p.settings, current.settings)
-  return { state: { ...current, ...p, settings }, orphanedNotificationIds }
+  const { settings, orphanedNotificationIds, retiredQuestions } = mergePersistedSettings(p.settings, current.settings)
+  return { state: { ...current, ...p, settings }, orphanedNotificationIds, retiredQuestions }
 }
 
 /**

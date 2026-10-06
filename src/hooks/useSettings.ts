@@ -11,7 +11,7 @@ export interface UseSettingsReturn {
   activeQuestion: Question | undefined
   updateSettings: (partial: Partial<Omit<UserSettings, 'questions'>>) => void
   updateQuestion: (id: string, partial: Partial<Omit<Question, 'id' | 'kaomojiSet'>>) => void
-  completeOnboarding: (firstQuestionLabel: string, language?: Language, reminderEnabled?: boolean, reminderTime?: string) => void
+  completeOnboarding: (firstQuestionLabel: string, language?: Language, reminderEnabled?: boolean, reminderTime?: string) => Promise<void>
   isOnboardingDone: boolean
 }
 

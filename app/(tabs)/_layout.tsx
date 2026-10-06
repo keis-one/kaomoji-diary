@@ -7,6 +7,7 @@ import { BottomTabBar, type BottomTabBarProps } from 'expo-router/build/react-na
 import { useDiaryStore } from '@/store'
 import { useTheme } from '@/hooks/useTheme'
 import AdBanner from '@/components/AdBanner'
+import { ToastHost } from '@/components/Toast'
 
 const TabIcon = ({ label }: { label: string }) => (
   <Text style={{ fontSize: 20 }}>{label}</Text>
@@ -14,8 +15,10 @@ const TabIcon = ({ label }: { label: string }) => (
 
 // デフォルトのタブバーの直上にバナー広告を差し込むカスタムタブバー。
 // これにより全画面共通で「タブバー上部」に広告が表示される。
+// トーストは広告のさらに上に出す（UI仕様 1章）。
 const TabBarWithAd = (props: BottomTabBarProps) => (
   <View>
+    <ToastHost />
     <AdBanner />
     <BottomTabBar {...props} />
   </View>

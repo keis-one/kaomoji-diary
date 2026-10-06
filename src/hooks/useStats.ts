@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useDiaryStore } from '@/store'
 import { todayIso, daysAgoIso } from '@/utils/date'
+import { calcStreak } from '@/domain/entries'
 import type { DiaryStats, DiaryEntry, KaomojiLevel, GraphPeriod, ChartPoint } from '@/types'
 
 const filterByPeriod = (entries: DiaryEntry[], period: GraphPeriod): DiaryEntry[] => {
@@ -9,18 +10,6 @@ const filterByPeriod = (entries: DiaryEntry[], period: GraphPeriod): DiaryEntry[
   return entries.filter((e) => e.date >= cutoff)
 }
 
-const calcStreak = (entries: DiaryEntry[]): number => {
-  const dateSet = new Set(entries.map((e) => e.date))
-  let streak = 0
-  let cursor = todayIso()
-  while (dateSet.has(cursor)) {
-    streak++
-    const d = new Date(cursor)
-    d.setDate(d.getDate() - 1)
-    cursor = d.toISOString().split('T')[0]
-  }
-  return streak
-}
 
 const buildChartPoints = (filteredEntries: DiaryEntry[], period: GraphPeriod): ChartPoint[] => {
   if (period === 'all') {
@@ -54,7 +43,7 @@ export const useStats = (period: GraphPeriod = 'week') => {
     return {
       averageLevel: Math.round(avg * 10) / 10,
       maxLevel: max,
-      currentStreak: calcStreak(entries),
+      currentStreak: calcStreak(entries.map((e) => e.date), todayIso()),
     }
   }, [entries])
 

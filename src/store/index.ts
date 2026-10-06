@@ -1,108 +1,43 @@
-import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
+/**
+ * アプリで使うストア（保存先: Android は AsyncStorage、Web は localStorage。通知: expo-notifications）。
+ * ストアの中身と保存の方式は ./createDiaryStore.ts（React Native に依存せずテストできる）。
+ */
+import { useStore } from 'zustand'
 import { Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import type { DiaryEntry, UserSettings, KaomojiLevel, Question, Language } from '@/types'
-import { DEFAULT_SETTINGS, STORAGE_KEYS, createDefaultQuestion } from '@/constants/app'
-import { todayIso } from '@/utils/date'
-import { cancelAllReminders, cancelReminder } from '@/utils/notifications'
-import { mergePersistedState } from './freeEdition'
+import { cancelReminder, listScheduledNotificationIds } from '@/utils/notifications'
+import { createDiaryStore, type DiaryState, type KeyValueStorage } from './createDiaryStore'
 
-const storage =
+const storage: KeyValueStorage =
   Platform.OS === 'web'
-    ? createJSONStorage(() => localStorage)
-    : createJSONStorage(() => AsyncStorage)
+    ? {
+        // Web は確認用（公開対象は Android）。localStorage には複数キーをまとめて書く仕組みが無い
+        getItem: async (key) => localStorage.getItem(key),
+        setItem: async (key, value) => localStorage.setItem(key, value),
+        multiGet: async (keys) => keys.map((k) => [k, localStorage.getItem(k)] as const),
+        multiSet: async (pairs) => pairs.forEach(([k, v]) => localStorage.setItem(k, v)),
+      }
+    : {
+        getItem: (key) => AsyncStorage.getItem(key),
+        setItem: (key, value) => AsyncStorage.setItem(key, value),
+        multiGet: (keys) => AsyncStorage.multiGet(keys),
+        // Android の multiSet は1つのトランザクションで書き込む（全部書けるか、何も書かないか）
+        multiSet: (pairs) => AsyncStorage.multiSet(pairs),
+      }
 
-interface DiaryStore {
-  entries: DiaryEntry[]
-  settings: UserSettings
-  isOnboardingDone: boolean
+export const diaryStore = createDiaryStore({
+  storage,
+  notifier: { cancel: cancelReminder, listScheduledIds: listScheduledNotificationIds },
+})
 
-  addOrUpdateEntry: (questionId: string, level: KaomojiLevel, comment: string, date?: string) => void
-  getEntry: (date: string, questionId: string) => DiaryEntry | undefined
-
-  // 無料版は問い1つのみ（QUESTION_LIMIT）。問いの追加・削除・切り替えの操作は持たない。
-  // 問いを作るのはオンボーディング（completeOnboarding）だけで、以後は文言・リマインダーの更新のみ。
-  updateQuestion: (id: string, partial: Partial<Omit<Question, 'id' | 'kaomojiSet'>>) => void
-
-  updateSettings: (partial: Partial<Omit<UserSettings, 'questions'>>) => void
-  completeOnboarding: (firstQuestionLabel: string, language?: Language, reminderEnabled?: boolean, reminderTime?: string) => void
-  resetAll: () => void
-}
-
-export const useDiaryStore = create<DiaryStore>()(
-  persist(
-    (set, get) => ({
-      entries: [],
-      settings: { ...DEFAULT_SETTINGS },
-      isOnboardingDone: false,
-
-      addOrUpdateEntry: (questionId, level, comment, date) => {
-        const targetDate = date ?? todayIso()
-        set((state) => {
-          const idx = state.entries.findIndex(
-            (e) => e.date === targetDate && e.questionId === questionId,
-          )
-          const newEntry: DiaryEntry = { date: targetDate, questionId, level, comment }
-          if (idx >= 0) {
-            const updated = [...state.entries]
-            updated[idx] = newEntry
-            return { entries: updated }
-          }
-          return { entries: [...state.entries, newEntry] }
-        })
-      },
-
-      getEntry: (date, questionId) =>
-        get().entries.find((e) => e.date === date && e.questionId === questionId),
-
-      updateQuestion: (id, partial) => {
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            questions: state.settings.questions.map((q) =>
-              q.id === id ? { ...q, ...partial } : q,
-            ),
-          },
-        }))
-      },
-
-      updateSettings: (partial) =>
-        set((state) => ({ settings: { ...state.settings, ...partial } })),
-
-      completeOnboarding: (firstQuestionLabel, language, reminderEnabled, reminderTime) => {
-        const q = createDefaultQuestion(firstQuestionLabel)
-        if (reminderEnabled !== undefined) q.reminderEnabled = reminderEnabled
-        if (reminderTime) q.reminderTime = reminderTime
-        set((state) => ({
-          isOnboardingDone: true,
-          settings: {
-            ...state.settings,
-            ...(language ? { language } : {}),
-            questions: [q],
-            activeQuestionId: q.id,
-          },
-        }))
-      },
-
-      resetAll: () => {
-        cancelAllReminders().catch(() => {})
-        set({ entries: [], settings: { ...DEFAULT_SETTINGS }, isOnboardingDone: false })
-      },
-    }),
-    {
-      name: STORAGE_KEYS.DIARY_ENTRIES,
-      storage,
-      // 読み込み時に設定を無料版の形（問い1つ・デフォルト顔文字・isPremium なし）に揃える。
-      // 記録データ（entries）はそのまま残す。詳細は ./freeEdition.ts。
-      merge: (persisted: unknown, current: DiaryStore): DiaryStore => {
-        const { state, orphanedNotificationIds } = mergePersistedState(persisted, current)
-        // 無効にした問いのリマインダーが届き続けないよう取り消す（取り消し済みの ID でも害はない）
-        orphanedNotificationIds.forEach((id) => {
-          cancelReminder(id).catch(() => {})
-        })
-        return state
-      },
-    },
-  ),
+/** 画面から使うフック。`useDiaryStore((s) => s.entries)` のように必要な値だけを選ぶ */
+export const useDiaryStore = Object.assign(
+  <T,>(selector: (s: DiaryState) => T): T => useStore(diaryStore, selector),
+  { getState: diaryStore.getState },
 )
+
+// アプリの起動時に保存データを読み込む（読み込み後、解除待ちの通知の解除・通知の整理も行う）
+void diaryStore.getState().hydrate()
+
+export type { DiaryState } from './createDiaryStore'
+export { needsQuestionRecovery } from './persisted'

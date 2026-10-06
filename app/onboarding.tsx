@@ -18,6 +18,7 @@ import {
 } from '@/utils/notifications'
 import { useDiaryStore } from '@/store'
 import type { Language } from '@/types'
+import { t } from '@/i18n/strings'
 
 type Step = 'language' | 'question' | 'reminder'
 
@@ -48,6 +49,8 @@ export default function OnboardingScreen() {
   const [questionLabel, setQuestionLabel] = useState('')
   const [reminderEnabled, setReminderEnabled] = useState(false)
   const [reminderTime, setReminderTime] = useState('21:00')
+  const [finishing, setFinishing] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
 
   const isJa = language === 'ja'
 
@@ -62,14 +65,24 @@ export default function OnboardingScreen() {
   }
 
   const handleFinish = async () => {
-    completeOnboarding(questionLabel.trim(), language, reminderEnabled, reminderTime)
+    if (finishing) return
+    setFinishing(true)
+    setSaveFailed(false)
+    try {
+      await completeOnboarding(questionLabel.trim(), language, reminderEnabled, reminderTime)
+    } catch {
+      // 保存できなかった → 先に進まず、もう一度押せるようにする
+      setSaveFailed(true)
+      setFinishing(false)
+      return
+    }
 
     // リマインダーが ON かつネイティブアプリの場合、通知をスケジュール
     if (reminderEnabled && isNotificationsSupported) {
       const granted = await requestNotificationPermissions()
       if (granted) {
         // completeOnboarding で生成された question を store から取得して通知スケジュール
-        // store 更新は同期的なので、直後に questions を参照できる
+        // （completeOnboarding は保存に成功してからメモリに反映するので、await の後に参照できる）
         const { settings } = useDiaryStore.getState()
         const question = settings.questions[0]
         if (question) {
@@ -81,6 +94,7 @@ export default function OnboardingScreen() {
       }
     }
 
+    setFinishing(false)
     router.replace('/(tabs)/')
   }
 
@@ -193,7 +207,9 @@ export default function OnboardingScreen() {
         </View>
       )}
 
-      <Pressable style={styles.nextBtn} onPress={handleFinish}>
+      {saveFailed && <Text style={styles.error}>{t(language).onboardingSaveFailed}</Text>}
+
+      <Pressable style={[styles.nextBtn, finishing && styles.nextBtnDisabled]} onPress={handleFinish} disabled={finishing}>
         <Text style={styles.nextBtnText}>{isJa ? 'はじめる！' : 'Get Started!'}</Text>
       </Pressable>
     </View>
@@ -241,6 +257,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   hint: { fontSize: 13, color: '#bbb', textAlign: 'center' },
+  error: { fontSize: 14, color: '#e53935', textAlign: 'center' },
   nextBtn: {
     width: '100%',
     paddingVertical: 16,
