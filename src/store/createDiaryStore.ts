@@ -17,7 +17,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { DiaryEntry, KaomojiLevel, Language, Question, UserSettings } from '@/types'
 import { createDefaultQuestion } from '@/constants/app'
 import { removeEntry, upsertEntry, pickRecoveryQuestionId } from '@/domain/entries'
-import { effectiveReminderTime, isValidReminderTime } from '@/domain/reminderTime'
+import { effectiveReminderTime, isValidReminderTime, withLastValidReminderTime } from '@/domain/reminderTime'
 import { applyImport, type ImportMode, type ImportRecord } from '@/domain/csv/importer'
 import {
   createInitialData,
@@ -325,6 +325,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
         const q = makeQuestion(label)
         if (reminderEnabled !== undefined) q.reminderEnabled = reminderEnabled
         if (reminderTime) q.reminderTime = reminderTime
+        Object.assign(q, withLastValidReminderTime(q)) // 作った問いにも最後の正しい時刻を持たせる
         return commit((s) => ({
           ...s,
           isOnboardingDone: true,
@@ -337,12 +338,12 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
         commit((s) => {
           const inheritedId = pickRecoveryQuestionId(s.entries)
           const fresh = makeQuestion(label)
-          const q: Question = {
+          const q: Question = withLastValidReminderTime({
             ...fresh,
             id: inheritedId ?? fresh.id,
             reminderEnabled: false,
             notificationId: undefined,
-          }
+          })
           return {
             ...s,
             isOnboardingDone: true,

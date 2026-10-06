@@ -15,6 +15,7 @@
 import type { DiaryEntry, Language, RetiredQuestion, Theme, UserSettings } from '@/types'
 import { DEFAULT_SETTINGS } from '@/constants/app'
 import { mergePersistedState } from './freeEdition'
+import { withLastValidReminderTime } from '@/domain/reminderTime'
 
 export const PERSIST_VERSION = 0
 
@@ -147,6 +148,9 @@ export const normalizePersisted = (stored: unknown): PersistedData => {
   }
 
   // いまの問いと同じIDの「外した問い」は、いまの問いとして扱う（一覧から除く）
+  // 旧データ（v1.2.3 以前）には「最後の正しい時刻」が無い。保存値が正しい時刻なら引き継ぐ（R5-A）
+  settings.questions = settings.questions.map(withLastValidReminderTime)
+
   const currentIds = new Set(settings.questions.map((q) => q.id))
   retiredQuestions = retiredQuestions.filter((r) => !currentIds.has(r.id))
 

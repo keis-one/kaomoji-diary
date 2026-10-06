@@ -146,9 +146,9 @@ test('一言の入力欄に maxLength を付けない（長い一言を切り詰
   }
 })
 
-test('app.json の version は 1.2.4（19b 第4回評価 R4-A の修正で PATCH を上げる）', () => {
+test('app.json の version は 1.2.5（19b 第5回評価 R5-A の修正で PATCH を上げる）', () => {
   const appJson = JSON.parse(read('app.json'))
-  assert.equal(appJson.expo.version, '1.2.4')
+  assert.equal(appJson.expo.version, '1.2.5')
 })
 
 test('カレンダーのセルは絵文字（DEFAULT_EMOJI_SET）、ポップアップは顔文字', () => {

@@ -14,6 +14,16 @@ export const isValidReminderTime = (time: string | undefined): time is string =>
   typeof time === 'string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(time)
 
 /**
+ * 最後の正しい時刻が無い（v1.2.3 以前の保存データ・作ったばかりの問い）か正しくないとき、
+ * 保存値が正しい時刻ならそれで補う。保存値が入力途中で復元できないときはそのまま（予約には既定の 21:00 を使う）。
+ * 何度行っても同じ結果になる（Sprint 19b 第5回評価 R5-A）
+ */
+export const withLastValidReminderTime = <Q extends Pick<Question, 'reminderTime' | 'lastValidReminderTime'>>(q: Q): Q =>
+  !isValidReminderTime(q.lastValidReminderTime) && isValidReminderTime(q.reminderTime)
+    ? { ...q, lastValidReminderTime: q.reminderTime }
+    : q
+
+/**
  * 予約に使う時刻。保存値が正しければそれ、入力途中なら最後に入力された正しい時刻、どちらも無ければ 21:00
  */
 export const effectiveReminderTime = (q: Pick<Question, 'reminderTime' | 'lastValidReminderTime'>): string =>
