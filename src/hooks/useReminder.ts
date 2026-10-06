@@ -39,6 +39,7 @@ export const useReminder = () => {
     return {
       toggleReminder: (questionId: string, enabled: boolean): void => void controller.toggle(questionId, enabled),
       updateReminderTime: (questionId: string, time: string): void => void controller.changeTime(questionId, time),
+      finishReminderTimeEdit: (questionId: string, time: string): void => void controller.finishTimeEdit(questionId, time),
     }
   }, [isJa])
 }

@@ -176,7 +176,8 @@ test('時刻の変更: 古い通知を解除して新しい時刻で予約し直
   assert.equal(r, 'scheduled')
   assert.equal(scheduledTime, '07:00')
   assert.deepEqual([...notifier.scheduled], ['n_7'])
-  assert.equal(s.getState().settings.questions[0].reminderTime, '07:00')
+  // 予約の結果では時刻欄の保存値を書き換えない（保存は時刻変更の操作が先に行う）。予約した時刻は最後の正しい時刻として残る
+  assert.equal(s.getState().settings.questions[0].lastValidReminderTime, '07:00')
 })
 
 // ── #3 不正な引用符 ─────────────────────────────────

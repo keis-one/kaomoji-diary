@@ -67,7 +67,7 @@ const SettingsMain: React.FC<{ onOpen: (v: View_) => void }> = ({ onOpen }) => {
   const entries = useDiaryStore((s) => s.entries)
   const resetAllData = useDiaryStore((s) => s.resetAllData)
   const reminderFailure = useDiaryStore((s) => s.reminderFailure)
-  const { toggleReminder, updateReminderTime } = useReminder()
+  const { toggleReminder, updateReminderTime, finishReminderTimeEdit } = useReminder()
   const { colors } = useTheme()
   const styles = makeStyles(colors)
   const s = t(settings.language)
@@ -170,7 +170,7 @@ const SettingsMain: React.FC<{ onOpen: (v: View_) => void }> = ({ onOpen }) => {
                     style={styles.reminderTimeInput}
                     value={q.reminderTime}
                     onChangeText={(v) => updateReminderTime(q.id, v)}
-                    onEndEditing={(e) => updateReminderTime(q.id, e.nativeEvent.text)}
+                    onEndEditing={(e) => finishReminderTimeEdit(q.id, e.nativeEvent.text)}
                     maxLength={5}
                     keyboardType="numbers-and-punctuation"
                   />

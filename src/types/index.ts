@@ -10,6 +10,11 @@ export interface Question {
   reminderEnabled: boolean
   reminderTime: string
   notificationId?: string
+  /**
+   * 最後に入力された正しい時刻（HH:MM）。時刻欄の保存値が入力途中（"08:" など）のときに、
+   * 予約・元に戻す値として使う（Sprint 19b 第4回評価 R4-A）。古い保存データには無い
+   */
+  lastValidReminderTime?: string
 }
 
 export type Theme = 'light' | 'dark' | 'system'

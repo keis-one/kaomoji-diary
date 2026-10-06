@@ -31,8 +31,8 @@ export type ReminderResult =
   | 'saved'
   | 'noQuestion'
 
-/** リマインダーの時刻として正しいか（H:MM / HH:MM、0:00〜23:59） */
-export const isValidReminderTime = (time: string): boolean => /^([01]?\d|2[0-3]):[0-5]\d$/.test(time)
+import { effectiveReminderTime, isValidReminderTime } from '@/domain/reminderTime'
+export { isValidReminderTime } from '@/domain/reminderTime'
 
 export const createReminderController = (deps: ReminderDeps) => {
   const { store } = deps
@@ -69,10 +69,14 @@ export const createReminderController = (deps: ReminderDeps) => {
     const st = store.getState()
     const question = st.settings.questions.find((q) => q.id === questionId)
     if (!question) return 'noQuestion'
-    st.updateQuestion(questionId, { reminderTime: time })
+    // 入力の途中（"08:" など）は保存だけ。操作券も進めない: 先に始まった正しい時刻の予約はそのまま終わらせ
+    // （ON と通知0件を作らない）、その結果でこの入力は書き換えない（ストア側）。HH:MM がそろったら予約し直す
+    if (!isValidReminderTime(time)) {
+      st.updateQuestion(questionId, { reminderTime: time })
+      return 'saved'
+    }
+    st.updateQuestion(questionId, { reminderTime: time, lastValidReminderTime: time })
     if (!deps.isSupported) return 'saved'
-    // 入力の途中（"7:" など）は保存だけ。HH:MM がそろってから予約し直す（途中の値で予約に失敗して OFF にしない）
-    if (!isValidReminderTime(time)) return 'saved'
     const pending = st.pendingReminderOperation(questionId)
     // ON・オンボーディング・時刻変更の途中なら、新しい時刻で予約し直す（それまでの操作は古くなる）
     const reschedule =
@@ -85,7 +89,19 @@ export const createReminderController = (deps: ReminderDeps) => {
     return store.getState().scheduleQuestionReminder(ticket, scheduleFn, { reminderTime: time })
   }
 
-  return { toggle, changeTime }
+  /**
+   * 時刻欄の編集を終えたとき（フォーカスが外れた・確定した）。正しい時刻なら changeTime と同じ。
+   * 入力途中のまま離れたら、最後の正しい時刻（予約している時刻）に戻す
+   */
+  const finishTimeEdit = async (questionId: string, time: string): Promise<ReminderResult> => {
+    if (isValidReminderTime(time)) return changeTime(questionId, time)
+    const question = store.getState().settings.questions.find((q) => q.id === questionId)
+    if (!question) return 'noQuestion'
+    store.getState().updateQuestion(questionId, { reminderTime: effectiveReminderTime({ ...question, reminderTime: time }) })
+    return 'saved'
+  }
+
+  return { toggle, changeTime, finishTimeEdit }
 }
 
 export interface OnboardingInput {

@@ -17,6 +17,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import type { DiaryEntry, KaomojiLevel, Language, Question, UserSettings } from '@/types'
 import { createDefaultQuestion } from '@/constants/app'
 import { removeEntry, upsertEntry, pickRecoveryQuestionId } from '@/domain/entries'
+import { effectiveReminderTime, isValidReminderTime } from '@/domain/reminderTime'
 import { applyImport, type ImportMode, type ImportRecord } from '@/domain/csv/importer'
 import {
   createInitialData,
@@ -158,7 +159,8 @@ export interface DiaryState extends PersistedData {
   /**
    * 問いのリマインダーを予約する。通知の整理（A3）と同じ列に並べて1つずつ行うので、予約した通知の ID が
    * ストアに入る前に整理で消されることはない。券が古い・問いが無くなったときは予約せず、予約後に古くなっていたら
-   * 予約した通知を解除して結果を捨てる。reminderTime を渡すとその時刻で予約し、保存値も同じにする
+   * 予約した通知を解除して結果を捨てる。reminderTime を渡すとその時刻で予約する（無ければ保存値。入力途中なら
+   * 最後の正しい時刻）。予約の結果で時刻欄の保存値は書き換えない（その間に利用者が入力した値を消さないため）
    */
   scheduleQuestionReminder: (
     ticket: ReminderTicket,
@@ -418,8 +420,16 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
             if (isStale()) return 'discarded' as const
             const question = get().settings.questions.find((q) => q.id === questionId) as Question
             if (question.notificationId) await get().cancelNotificationOrQueue(question.notificationId)
-            // 予約する時刻: 指定があればその時刻、無ければ予約する時点の保存値
-            const target: Question = opts.reminderTime ? { ...question, reminderTime: opts.reminderTime } : question
+            // 予約する時刻: 指定があればその時刻、無ければ予約する時点の保存値（入力途中なら最後の正しい時刻）
+            const target: Question = { ...question, reminderTime: opts.reminderTime ?? effectiveReminderTime(question) }
+            // 予約の結果で時刻欄の保存値を書き換えるのは、ON・オンボーディングで保存値が正しい時刻でないときだけ
+            // （時刻欄は OFF の間は表示されないので、利用者の入力を消すことはない）。時刻変更の結果では書き換えない
+            const timeFill = () => {
+              const cur = get().settings.questions.find((q) => q.id === questionId)
+              return ticket.kind !== 'time' && cur && !isValidReminderTime(cur.reminderTime)
+                ? { reminderTime: target.reminderTime }
+                : {}
+            }
             // 時間切れの後で予約が終わったら、その通知は使わないので解除する（解除できなければ解除待ちへ）
             let id: string | undefined
             try {
@@ -444,7 +454,7 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
               get().updateQuestion(questionId, {
                 reminderEnabled: false,
                 notificationId: undefined,
-                reminderTime: target.reminderTime,
+                ...timeFill(),
               })
               set({ reminderFailure: true })
               return 'notScheduled' as const
@@ -452,7 +462,8 @@ export const createDiaryStore = (deps: DiaryStoreDeps): DiaryStore => {
             get().updateQuestion(questionId, {
               reminderEnabled: true,
               notificationId: id,
-              reminderTime: target.reminderTime, // 保存値と予約した時刻を必ず一致させる
+              lastValidReminderTime: target.reminderTime,
+              ...timeFill(),
             })
             set({ reminderFailure: false })
             return 'scheduled' as const
