@@ -25,6 +25,10 @@ interface Props {
   onClose: () => void
 }
 
+/**
+ * 顔文字カスタムの編集モーダル（F41/F42）— 有料版アプリの将来仕様。無料版アプリからは参照しない。
+ * 無料版は顔文字をデフォルトセットのプレビュー表示のみとする（Sprint 19a で設定画面から外した）。
+ */
 export const KaomojiEditor: React.FC<Props> = ({
   visible,
   kaomojiSet,

@@ -15,7 +15,6 @@ import { useSettings } from '@/hooks/useSettings'
 import { useStats } from '@/hooks/useStats'
 import { useTheme } from '@/hooks/useTheme'
 import { KaomojiSelector } from '@/components/KaomojiSelector'
-import { QuestionTabs } from '@/components/QuestionTabs'
 import { todayIso } from '@/utils/date'
 import { shareEntry } from '@/utils/share'
 import { getDayOfWeek, getWhatDay } from '@/utils/dayInfo'
@@ -24,7 +23,7 @@ import type { KaomojiLevel } from '@/types'
 
 export default function HomeScreen() {
   const { todayEntry, record } = useDiary()
-  const { settings, activeQuestion, setActiveQuestion, canAddQuestion } = useSettings()
+  const { settings, activeQuestion } = useSettings()
   const { stats } = useStats()
   const { colors } = useTheme()
   const [level, setLevel] = useState<KaomojiLevel | null>(todayEntry?.level ?? null)
@@ -66,14 +65,6 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <QuestionTabs
-        questions={settings.questions}
-        activeQuestionId={settings.activeQuestionId}
-        onSelect={setActiveQuestion}
-        canAdd={canAddQuestion}
-        isPremium={settings.isPremium}
-      />
-
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

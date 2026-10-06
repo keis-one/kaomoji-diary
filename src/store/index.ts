@@ -3,15 +3,10 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { Platform } from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { DiaryEntry, UserSettings, KaomojiLevel, Question, Language } from '@/types'
-import {
-  DEFAULT_SETTINGS,
-  STORAGE_KEYS,
-  createDefaultQuestion,
-  FREE_QUESTION_LIMIT,
-  PREMIUM_QUESTION_LIMIT,
-} from '@/constants/app'
+import { DEFAULT_SETTINGS, STORAGE_KEYS, createDefaultQuestion } from '@/constants/app'
 import { todayIso } from '@/utils/date'
 import { cancelAllReminders, cancelReminder } from '@/utils/notifications'
+import { mergePersistedState } from './freeEdition'
 
 const storage =
   Platform.OS === 'web'
@@ -26,10 +21,9 @@ interface DiaryStore {
   addOrUpdateEntry: (questionId: string, level: KaomojiLevel, comment: string, date?: string) => void
   getEntry: (date: string, questionId: string) => DiaryEntry | undefined
 
-  addQuestion: (label: string) => Question | null
-  updateQuestion: (id: string, partial: Partial<Omit<Question, 'id'>>) => void
-  removeQuestion: (id: string) => void
-  setActiveQuestion: (id: string) => void
+  // 無料版は問い1つのみ（QUESTION_LIMIT）。問いの追加・削除・切り替えの操作は持たない。
+  // 問いを作るのはオンボーディング（completeOnboarding）だけで、以後は文言・リマインダーの更新のみ。
+  updateQuestion: (id: string, partial: Partial<Omit<Question, 'id' | 'kaomojiSet'>>) => void
 
   updateSettings: (partial: Partial<Omit<UserSettings, 'questions'>>) => void
   completeOnboarding: (firstQuestionLabel: string, language?: Language, reminderEnabled?: boolean, reminderTime?: string) => void
@@ -62,21 +56,6 @@ export const useDiaryStore = create<DiaryStore>()(
       getEntry: (date, questionId) =>
         get().entries.find((e) => e.date === date && e.questionId === questionId),
 
-      addQuestion: (label) => {
-        const { settings } = get()
-        const limit = settings.isPremium ? PREMIUM_QUESTION_LIMIT : FREE_QUESTION_LIMIT
-        if (settings.questions.length >= limit) return null
-        const q = createDefaultQuestion(label)
-        set((state) => ({
-          settings: {
-            ...state.settings,
-            questions: [...state.settings.questions, q],
-            activeQuestionId: state.settings.activeQuestionId || q.id,
-          },
-        }))
-        return q
-      },
-
       updateQuestion: (id, partial) => {
         set((state) => ({
           settings: {
@@ -87,25 +66,6 @@ export const useDiaryStore = create<DiaryStore>()(
           },
         }))
       },
-
-      removeQuestion: (id) => {
-        // 削除対象の通知をキャンセル
-        const targetQuestion = get().settings.questions.find((q) => q.id === id)
-        if (targetQuestion?.notificationId) {
-          cancelReminder(targetQuestion.notificationId).catch(() => {})
-        }
-        set((state) => {
-          const questions = state.settings.questions.filter((q) => q.id !== id)
-          const activeQuestionId =
-            state.settings.activeQuestionId === id
-              ? (questions[0]?.id ?? '')
-              : state.settings.activeQuestionId
-          return { settings: { ...state.settings, questions, activeQuestionId } }
-        })
-      },
-
-      setActiveQuestion: (id) =>
-        set((state) => ({ settings: { ...state.settings, activeQuestionId: id } })),
 
       updateSettings: (partial) =>
         set((state) => ({ settings: { ...state.settings, ...partial } })),
@@ -133,19 +93,15 @@ export const useDiaryStore = create<DiaryStore>()(
     {
       name: STORAGE_KEYS.DIARY_ENTRIES,
       storage,
+      // 読み込み時に設定を無料版の形（問い1つ・デフォルト顔文字・isPremium なし）に揃える。
+      // 記録データ（entries）はそのまま残す。詳細は ./freeEdition.ts。
       merge: (persisted: unknown, current: DiaryStore): DiaryStore => {
-        const p = persisted as Partial<DiaryStore>
-        return {
-          ...current,
-          ...p,
-          settings: {
-            ...current.settings,
-            ...(p.settings ?? {}),
-            questions: Array.isArray(p.settings?.questions)
-              ? p.settings.questions
-              : current.settings.questions,
-          },
-        }
+        const { state, orphanedNotificationIds } = mergePersistedState(persisted, current)
+        // 無効にした問いのリマインダーが届き続けないよう取り消す（取り消し済みの ID でも害はない）
+        orphanedNotificationIds.forEach((id) => {
+          cancelReminder(id).catch(() => {})
+        })
+        return state
       },
     },
   ),

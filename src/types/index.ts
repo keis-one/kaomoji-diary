@@ -14,11 +14,16 @@ export interface Question {
 
 export type Theme = 'light' | 'dark' | 'system'
 
+/**
+ * ユーザー設定。
+ * 無料版アプリでは問いは常に1つ（QUESTION_LIMIT）で、顔文字はデフォルトセットのみ。
+ * 旧 preview 版にあった `isPremium` は廃止した（無料版・有料版は別アプリのため、
+ * アプリ内でプランを切り替えない）。保存データに残っていても読み込み時に除去する。
+ */
 export interface UserSettings {
   questions: Question[]
   activeQuestionId: string
   language: Language
-  isPremium: boolean
   theme: Theme
 }
 

@@ -6,7 +6,6 @@ import {
   BannerAdSize,
   TestIds,
 } from 'react-native-google-mobile-ads'
-import { useDiaryStore } from '@/store'
 import { useTheme } from '@/hooks/useTheme'
 import { getBannerAdUnitId } from '@/constants/ads'
 
@@ -20,18 +19,18 @@ const BANNER_HEIGHT = 50
 /**
  * タブバー上部に表示するバナー広告。
  *
- * - プレミアムユーザーには一切表示しない（settings.isPremium を再利用）。
+ * - 無料版アプリでは全ユーザーに常に表示する（プランの判定はしない。製品仕様 Sprint 13 改訂版）。
  * - 広告ユニット ID が未取得のプラットフォームでは表示しない。
- * - 読み込み前/失敗時も一定高さの領域を確保し、レイアウト崩れを防ぐ。
+ * - 読み込み前/読み込み失敗時/オフライン時も一定高さの空の領域を確保し、
+ *   レイアウト崩れや操作の妨げを防ぐ（失敗時は BannerAd を外して空の領域だけ残す）。
  */
 export default function AdBanner() {
-  const isPremium = useDiaryStore((s) => s.settings.isPremium)
   const { colors } = useTheme()
   const insets = useSafeAreaInsets()
   const [failed, setFailed] = useState(false)
 
-  // プレミアムユーザー、または広告ユニット未設定なら領域ごと非表示。
-  if (isPremium || !RESOLVED_UNIT_ID) {
+  // 広告ユニット未設定のプラットフォームでは領域ごと非表示。
+  if (!RESOLVED_UNIT_ID) {
     return null
   }
 

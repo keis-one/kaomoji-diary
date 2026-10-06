@@ -8,18 +8,21 @@ interface Props {
   onSelect: (id: string) => void
   onAdd?: () => void
   canAdd?: boolean
-  isPremium?: boolean
 }
 
+/**
+ * 複数の問いを切り替えるタブ（F10/F16）— 有料版アプリの将来仕様。無料版アプリからは参照しない。
+ * 無料版は問い1つのため使わない（Sprint 19a で各画面から外し、src/paid-future/ に移した）。
+ * 旧 preview 版のプレミアム判定と「👑 複数」の案内は削除した。
+ */
 export const QuestionTabs: React.FC<Props> = ({
   questions,
   activeQuestionId,
   onSelect,
   onAdd,
   canAdd = false,
-  isPremium = false,
 }) => {
-  if (questions.length <= 1 && !isPremium) return null
+  if (questions.length <= 1 && !onAdd) return null
 
   return (
     <View style={styles.wrapper}>
@@ -46,15 +49,9 @@ export const QuestionTabs: React.FC<Props> = ({
           )
         })}
 
-        {isPremium && canAdd && onAdd && (
+        {canAdd && onAdd && (
           <Pressable onPress={onAdd} style={styles.addButton} accessibilityLabel="問いを追加">
             <Text style={styles.addButtonText}>＋</Text>
-          </Pressable>
-        )}
-
-        {!isPremium && (
-          <Pressable style={styles.premiumHint}>
-            <Text style={styles.premiumHintText}>👑 複数</Text>
           </Pressable>
         )}
       </ScrollView>
@@ -111,20 +108,5 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: 16,
     color: '#66bb6a',
-  },
-  premiumHint: {
-    height: 32,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#f0c040',
-    backgroundColor: '#fffde7',
-    opacity: 0.8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  premiumHintText: {
-    fontSize: 12,
-    color: '#999',
   },
 })

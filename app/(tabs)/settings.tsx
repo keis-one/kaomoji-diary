@@ -16,42 +16,22 @@ import { useSettings } from '@/hooks/useSettings'
 import { useReminder } from '@/hooks/useReminder'
 import { useTheme } from '@/hooks/useTheme'
 import { useDiaryStore } from '@/store'
-import type { Language, KaomojiSet, Theme } from '@/types'
+import type { Language, Theme } from '@/types'
 import { KAOMOJI_LEVELS } from '@/constants/kaomoji'
-import { KaomojiEditor } from '@/components/KaomojiEditor'
 
 export default function SettingsScreen() {
-  const {
-    settings,
-    canAddQuestion,
-    updateSettings,
-    addQuestion,
-    updateQuestion,
-    removeQuestion,
-    setActiveQuestion,
-  } = useSettings()
+  // 無料版は問い1つのみ。問いの追加・削除・切り替え、顔文字カスタム、
+  // プレミアム関連の表示・開発用トグルは置かない（製品仕様 Sprint 19）。
+  const { settings, activeQuestion: q, updateSettings, updateQuestion } = useSettings()
   const resetAll = useDiaryStore((s) => s.resetAll)
   const entries = useDiaryStore((s) => s.entries)
 
-  const [newLabel, setNewLabel] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editLabel, setEditLabel] = useState('')
-  const [kaomojiEditId, setKaomojiEditId] = useState<string | null>(null)
-
-  const kaomojiEditQuestion = kaomojiEditId
-    ? settings.questions.find((q) => q.id === kaomojiEditId)
-    : null
 
   const { toggleReminder, updateReminderTime } = useReminder()
   const { colors } = useTheme()
   const isJa = settings.language === 'ja'
-
-  const handleAddQuestion = () => {
-    const label = newLabel.trim()
-    if (!label) return
-    addQuestion(label)
-    setNewLabel('')
-  }
 
   const startEdit = (id: string, label: string) => {
     setEditingId(id)
@@ -62,17 +42,6 @@ export default function SettingsScreen() {
     if (!editingId || !editLabel.trim()) return
     updateQuestion(editingId, { label: editLabel.trim() })
     setEditingId(null)
-  }
-
-  const handleRemove = (id: string, label: string) => {
-    Alert.alert(
-      isJa ? '問いを削除' : 'Delete Question',
-      isJa ? `「${label}」を削除しますか？この問いの記録も削除されます。` : `Delete "${label}"? Records for this question will also be deleted.`,
-      [
-        { text: isJa ? 'キャンセル' : 'Cancel', style: 'cancel' },
-        { text: isJa ? '削除' : 'Delete', style: 'destructive', onPress: () => removeQuestion(id) },
-      ],
-    )
   }
 
   const handleReset = () => {
@@ -138,11 +107,11 @@ export default function SettingsScreen() {
           </Text>
         </Section>
 
-        {/* 問い管理 */}
-        <Section title={isJa ? '記録の設定' : 'Questions'}>
-          {settings.questions.map((q) => (
-            <View key={q.id} style={styles.questionBlock}>
-              {/* 問いラベル行 */}
+        {/* 記録の設定（問いは1つ。文言の編集とリマインダーのみ） */}
+        <Section title={isJa ? '記録の設定' : 'Question'}>
+          {q && (
+            <View style={styles.questionBlock}>
+              {/* 問いラベル行（文言の編集のみ） */}
               {editingId === q.id ? (
                 <View style={styles.editRow}>
                   <TextInput
@@ -158,55 +127,20 @@ export default function SettingsScreen() {
                 </View>
               ) : (
                 <View style={styles.questionRow}>
-                  <Pressable
-                    style={styles.questionLabelWrap}
-                    onPress={() => setActiveQuestion(q.id)}
-                  >
-                    <Text style={styles.questionLabel}>
-                      {isJa ? `「${q.label}できた？」` : `"Did you ${q.label} today?"`}
-                    </Text>
-                    {q.id === settings.activeQuestionId && (
-                      <Text style={styles.activeTag}>{isJa ? '使用中' : 'Active'}</Text>
-                    )}
-                  </Pressable>
+                  <Text style={styles.questionLabel}>
+                    {isJa ? `「${q.label}できた？」` : `"Did you ${q.label} today?"`}
+                  </Text>
                   <Pressable onPress={() => startEdit(q.id, q.label)} style={styles.iconBtn}>
                     <Text style={styles.iconText}>✏️</Text>
                   </Pressable>
-                  {settings.questions.length > 1 && (
-                    <Pressable onPress={() => handleRemove(q.id, q.label)} style={styles.iconBtn}>
-                      <Text style={styles.iconText}>🗑️</Text>
-                    </Pressable>
-                  )}
                 </View>
               )}
 
-              {/* 顔文字セット表示 */}
+              {/* 顔文字セット（デフォルトセットのプレビュー表示のみ） */}
               <View style={styles.kaomojiRow}>
                 {KAOMOJI_LEVELS.map((lv) => (
                   <Text key={lv} style={styles.kaomojiPreview}>{q.kaomojiSet[lv]}</Text>
                 ))}
-                <Pressable
-                  style={[styles.customizeBtn, !settings.isPremium && styles.customizeBtnLocked]}
-                  onPress={() => {
-                    if (!settings.isPremium) {
-                      Alert.alert(
-                        isJa ? '👑 プレミアム限定' : '👑 Premium Feature',
-                        isJa
-                          ? '顔文字カスタムはプレミアム機能です。プレミアムにアップグレードすると、各レベルの顔文字を自由に変更できます。'
-                          : 'Custom kaomoji is a premium feature. Upgrade to premium to freely customize each level.',
-                        [{ text: isJa ? 'OK' : 'OK' }],
-                      )
-                      return
-                    }
-                    setKaomojiEditId(q.id)
-                  }}
-                >
-                  <Text style={[styles.customizeBtnText, !settings.isPremium && styles.customizeBtnTextLocked]}>
-                    {settings.isPremium
-                      ? (isJa ? 'カスタム ✏️' : 'Custom ✏️')
-                      : (isJa ? 'カスタム 🔒' : 'Custom 🔒')}
-                  </Text>
-                </Pressable>
               </View>
 
               {/* リマインダー */}
@@ -233,67 +167,8 @@ export default function SettingsScreen() {
                 </View>
               </View>
             </View>
-          ))}
-
-          {canAddQuestion && (
-            <View style={styles.addRow}>
-              <TextInput
-                style={styles.addInput}
-                placeholder={isJa ? '新しい問いを追加' : 'Add question'}
-                value={newLabel}
-                onChangeText={setNewLabel}
-                maxLength={20}
-              />
-              <Pressable
-                style={[styles.addBtn, !newLabel.trim() && styles.addBtnDisabled]}
-                onPress={handleAddQuestion}
-                disabled={!newLabel.trim()}
-              >
-                <Text style={styles.addBtnText}>{isJa ? '追加' : 'Add'}</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {!settings.isPremium && (
-            <Text style={styles.premiumNote}>
-              {isJa ? '👑 プレミアムで最大5つの問いを設定できます' : '👑 Premium: up to 5 questions'}
-            </Text>
           )}
         </Section>
-
-        {/* プレミアム */}
-        {!settings.isPremium && (
-          <Pressable style={styles.premiumBanner}>
-            <Text style={styles.premiumBannerText}>
-              👑 {isJa ? 'プレミアムにする' : 'Upgrade to Premium'}
-            </Text>
-            <Text style={styles.premiumBannerSub}>
-              {isJa ? 'グラフ・複数問い・顔文字カスタム（準備中）' : 'Graph, multi-questions, custom kaomoji (coming soon)'}
-            </Text>
-          </Pressable>
-        )}
-
-        {settings.isPremium && (
-          <Section title={isJa ? 'プレミアム' : 'Premium'}>
-            <Text style={styles.premiumTitle}>👑 {isJa ? 'プレミアム会員' : 'Premium Member'}</Text>
-            <Text style={styles.premiumSub}>{isJa ? '全機能が使えます' : 'All features unlocked'}</Text>
-          </Section>
-        )}
-
-        {/* DEV toggle — Expo Go / dev client (__DEV__) と EAS preview ビルド
-            (EXPO_PUBLIC_ENABLE_DEV_TOOLS=true) でのみ表示。production では非表示 */}
-        {(__DEV__ || process.env.EXPO_PUBLIC_ENABLE_DEV_TOOLS === 'true') && (
-          <Section title="[DEV] Premium">
-            <View style={styles.devRow}>
-              <Text style={styles.devLabel}>Premium toggle</Text>
-              <Switch
-                value={settings.isPremium}
-                onValueChange={(v) => updateSettings({ isPremium: v })}
-                trackColor={{ true: '#66bb6a' }}
-              />
-            </View>
-          </Section>
-        )}
 
         {/* データ */}
         <Section title={isJa ? 'データ' : 'Data'}>
@@ -311,16 +186,6 @@ export default function SettingsScreen() {
         </Section>
       </ScrollView>
       </KeyboardAvoidingView>
-      {kaomojiEditQuestion && (
-        <KaomojiEditor
-          visible={!!kaomojiEditId}
-          kaomojiSet={kaomojiEditQuestion.kaomojiSet}
-          questionLabel={kaomojiEditQuestion.label}
-          language={settings.language}
-          onSave={(newSet: KaomojiSet) => updateQuestion(kaomojiEditQuestion.id, { kaomojiSet: newSet })}
-          onClose={() => setKaomojiEditId(null)}
-        />
-      )}
     </SafeAreaView>
   )
 }
@@ -355,12 +220,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
   },
   questionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  questionLabelWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  questionLabel: { fontSize: 14, color: '#333' },
-  activeTag: {
-    fontSize: 11, color: '#66bb6a', backgroundColor: '#e8f5e9',
-    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
-  },
+  questionLabel: { flex: 1, fontSize: 14, color: '#333' },
   iconBtn: { padding: 4 },
   iconText: { fontSize: 18 },
   editRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
@@ -372,15 +232,6 @@ const styles = StyleSheet.create({
   editSaveBtnText: { color: '#fff', fontWeight: '600' },
   kaomojiRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   kaomojiPreview: { fontSize: 11, color: '#555' },
-  customizeBtn: {
-    paddingVertical: 3, paddingHorizontal: 10,
-    borderRadius: 10, borderWidth: 1, borderColor: '#f0c040', backgroundColor: '#fffde7',
-  },
-  customizeBtnLocked: {
-    borderColor: '#ccc', backgroundColor: '#f5f5f5',
-  },
-  customizeBtnText: { fontSize: 11, color: '#f9a825' },
-  customizeBtnTextLocked: { color: '#aaa' },
   reminderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   reminderLabel: { fontSize: 14, color: '#555' },
   reminderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -389,26 +240,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
     paddingVertical: 4, paddingHorizontal: 8, width: 70, textAlign: 'center',
   },
-  addRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  addInput: {
-    flex: 1, borderWidth: 1, borderColor: '#ddd',
-    borderRadius: 8, padding: 10, fontSize: 14, color: '#333',
-  },
-  addBtn: { paddingVertical: 10, paddingHorizontal: 18, backgroundColor: '#66bb6a', borderRadius: 8 },
-  addBtnDisabled: { backgroundColor: '#ccc' },
-  addBtnText: { color: '#fff', fontWeight: '600' },
   themeHint: { fontSize: 12, color: '#999', textAlign: 'center', marginTop: 4 },
-  premiumNote: { fontSize: 12, color: '#999', textAlign: 'center' },
-  premiumBanner: {
-    backgroundColor: '#fffde7', borderRadius: 14, padding: 18,
-    borderWidth: 1.5, borderColor: '#f0c040', gap: 6, alignItems: 'center',
-  },
-  premiumBannerText: { fontSize: 17, fontWeight: '700', color: '#5d4037' },
-  premiumBannerSub: { fontSize: 12, color: '#999', textAlign: 'center' },
-  premiumTitle: { fontSize: 16, fontWeight: '600', color: '#333' },
-  premiumSub: { fontSize: 13, color: '#999' },
-  devRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  devLabel: { fontSize: 13, color: '#999' },
   rowBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 4,

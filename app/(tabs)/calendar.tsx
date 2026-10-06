@@ -11,7 +11,6 @@ import { useDiaryStore } from '@/store'
 import { useSettings } from '@/hooks/useSettings'
 import { useTheme } from '@/hooks/useTheme'
 import { DayPopup } from '@/components/DayPopup'
-import { QuestionTabs } from '@/components/QuestionTabs'
 import type { AppColors } from '@/constants/colors'
 import {
   formatMonthHeader,
@@ -31,7 +30,7 @@ export default function CalendarScreen() {
     [entries],
   )
   const getEntry = (date: string, questionId: string) => entryMap[`${questionId}:${date}`]
-  const { settings, activeQuestion, setActiveQuestion, canAddQuestion } = useSettings()
+  const { settings, activeQuestion } = useSettings()
 
   const today = new Date()
   const [viewYear, setViewYear] = useState(today.getFullYear())
@@ -72,14 +71,6 @@ export default function CalendarScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <QuestionTabs
-        questions={settings.questions}
-        activeQuestionId={settings.activeQuestionId}
-        onSelect={setActiveQuestion}
-        canAdd={canAddQuestion}
-        isPremium={settings.isPremium}
-      />
-
       <ScrollView>
         <View style={styles.header}>
           <Pressable onPress={prevMonth} style={styles.navBtn}>

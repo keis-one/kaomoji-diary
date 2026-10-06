@@ -11,13 +11,24 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useStats } from '@/hooks/useStats'
 import { useSettings } from '@/hooks/useSettings'
 import { useTheme } from '@/hooks/useTheme'
-import { QuestionTabs } from '@/components/QuestionTabs'
-import { LineChart } from '@/components/LineChart'
+import { LineChart } from './LineChart'
 import type { GraphPeriod } from '@/types'
 import { GRAPH_PERIODS } from '@/constants/app'
 
+/**
+ * グラフ画面（F21/F22）— 有料版アプリの将来仕様。無料版アプリからは参照しない。
+ *
+ * 無料版・有料版を別アプリにするオーナー決定（2026-10-06）により、無料版のタブから外した
+ * （Sprint 19a）。expo-router は app/ 配下を自動でルートにするため、app/ の外に移している。
+ * 有料版アプリで使うときは、仕様（kaomoji-diary_paid-app-future.md）に合わせて
+ * app/ 配下のルートから読み込む。複数問いのタブ（./QuestionTabs.tsx）の
+ * 組み込みもそのときに行う。
+ *
+ * 旧 preview 版のプレミアム判定（ゲート画面）は、有料版アプリにはプラン切り替えが無いため削除した。
+ * 旧実装は apps/kaomoji-diary の git 履歴（コミット 73347ff 時点の app/(tabs)/graph.tsx）にある。
+ */
 export default function GraphScreen() {
-  const { settings, setActiveQuestion, canAddQuestion } = useSettings()
+  const { settings } = useSettings()
   const [period, setPeriod] = useState<GraphPeriod>('week')
   const { stats, chartPoints } = useStats(period)
   const { width } = useWindowDimensions()
@@ -28,41 +39,10 @@ export default function GraphScreen() {
     ? { week: '1週間', month: '1ヶ月', all: '全期間' }
     : { week: '7 days', month: '30 days', all: 'All' }
 
-  if (!settings.isPremium) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-        <View style={styles.gateContainer}>
-          <Text style={styles.gateEmoji}>👑</Text>
-          <Text style={styles.gateTitle}>
-            {isJa ? 'グラフはプレミアム機能' : 'Graph is a Premium Feature'}
-          </Text>
-          <Text style={styles.gateSubtitle}>
-            {isJa
-              ? '習慣の推移をグラフで確認できます。\nプレミアムにアップグレードすると使えます。'
-              : 'Track your habit trends with a graph.\nUpgrade to Premium to unlock.'}
-          </Text>
-          <Pressable style={styles.upgradeBtn}>
-            <Text style={styles.upgradeBtnText}>
-              {isJa ? 'プレミアムに登録（準備中）' : 'Upgrade (Coming Soon)'}
-            </Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-    )
-  }
-
   const chartWidth = width - 32
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
-      <QuestionTabs
-        questions={settings.questions}
-        activeQuestionId={settings.activeQuestionId}
-        onSelect={setActiveQuestion}
-        canAdd={canAddQuestion}
-        isPremium={settings.isPremium}
-      />
-
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.periodRow}>
           {GRAPH_PERIODS.map((p) => (
@@ -111,24 +91,6 @@ export default function GraphScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
-  gateContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-    gap: 16,
-  },
-  gateEmoji: { fontSize: 56 },
-  gateTitle: { fontSize: 22, fontWeight: '700', color: '#333', textAlign: 'center' },
-  gateSubtitle: { fontSize: 15, color: '#777', textAlign: 'center', lineHeight: 22 },
-  upgradeBtn: {
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    backgroundColor: '#f0c040',
-    borderRadius: 14,
-    marginTop: 8,
-  },
-  upgradeBtnText: { fontSize: 15, fontWeight: '700', color: '#5d4037' },
   content: { padding: 16, gap: 16 },
   periodRow: { flexDirection: 'row', gap: 8 },
   periodBtn: {

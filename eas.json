@@ -4,9 +4,6 @@
   },
   "build": {
     "preview": {
-      "env": {
-        "EXPO_PUBLIC_ENABLE_DEV_TOOLS": "true"
-      },
       "android": {
         "buildType": "apk"
       }

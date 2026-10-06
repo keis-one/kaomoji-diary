@@ -21,9 +21,11 @@ const TabBarWithAd = (props: BottomTabBarProps) => (
   </View>
 )
 
+// 無料版のタブはホーム / カレンダー / 設定の3つ（製品仕様 Sprint 19）。
+// expo-router は app/(tabs)/ 配下のファイルを自動でタブにするため、
+// グラフ画面（有料版アプリの将来仕様）は app/ の外（src/paid-future/）に置いている。
 export default function TabLayout() {
   const language = useDiaryStore((s) => s.settings.language)
-  const isPremium = useDiaryStore((s) => s.settings.isPremium)
   const { colors } = useTheme()
   const isJa = language === 'ja'
 
@@ -52,13 +54,6 @@ export default function TabLayout() {
         options={{
           title: isJa ? 'カレンダー' : 'Calendar',
           tabBarIcon: () => <TabIcon label="📅" />,
-        }}
-      />
-      <Tabs.Screen
-        name="graph"
-        options={{
-          title: isJa ? 'グラフ' : 'Graph',
-          tabBarIcon: () => <TabIcon label={isPremium ? '📊' : '🔒'} />,
         }}
       />
       <Tabs.Screen

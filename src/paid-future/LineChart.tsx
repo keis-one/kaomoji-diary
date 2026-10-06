@@ -4,6 +4,7 @@ import Svg, { Polyline, Circle, Line, Text as SvgText } from 'react-native-svg'
 import type { ChartPoint } from '@/types'
 import { useTheme } from '@/hooks/useTheme'
 
+/** グラフの折れ線（F21）— 有料版アプリの将来仕様。無料版アプリからは参照しない。 */
 interface Props {
   points: ChartPoint[]
   width: number
