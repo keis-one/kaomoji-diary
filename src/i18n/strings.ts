@@ -65,6 +65,7 @@ const ja = {
   developer: 'デベロッパー',
   version: 'バージョン',
   contact: 'お問い合わせ',
+  privacyPolicy: 'プライバシーポリシー',
 
   // 書き出し
   exportTitle: 'データを書き出す',
@@ -158,6 +159,10 @@ const ja = {
   contactSubjectExample: '件名の例:',
   appVersionLine: (v: string) => `アプリのバージョン: ${v}`,
   osVersionLine: (v: string) => `OSのバージョン: ${v}`,
+
+  // プライバシーポリシー（ブラウザを開けなかったとき）
+  privacyNoBrowser: 'ブラウザを開けませんでした。下のURLをブラウザで開いてください。',
+  privacyCopy: 'URLをコピー',
 }
 
 export type Strings = typeof ja
@@ -213,6 +218,7 @@ const en: Strings = {
   developer: 'Developer',
   version: 'Version',
   contact: 'Contact us',
+  privacyPolicy: 'Privacy Policy',
 
   exportTitle: 'Export data',
   records: 'Records',
@@ -302,6 +308,9 @@ const en: Strings = {
   contactSubjectExample: 'Example subject:',
   appVersionLine: (v) => `App version: ${v}`,
   osVersionLine: (v) => `OS version: ${v}`,
+
+  privacyNoBrowser: "Couldn't open a browser. Please open the URL below in your browser.",
+  privacyCopy: 'Copy URL',
 }
 
 export const STRINGS: Record<Language, Strings> = { ja, en }

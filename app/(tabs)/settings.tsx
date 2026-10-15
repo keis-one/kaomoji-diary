@@ -22,22 +22,24 @@ import type { AppColors } from '@/constants/colors'
 import { KAOMOJI_LEVELS } from '@/constants/kaomoji'
 import { t } from '@/i18n/strings'
 import { buildMailtoUrl, openContactMail, DEVELOPER_NAME } from '@/domain/contact'
+import { openPrivacyPolicy } from '@/domain/privacyPolicy'
 import { getAppVersion, getOsVersion } from '@/utils/appInfo'
 import { BusyOverlay, ConfirmDialog } from '@/components/Dialogs'
 import { ExportScreen } from '@/screens/settings/ExportScreen'
 import { ImportScreen } from '@/screens/settings/ImportScreen'
 import { ContactScreen } from '@/screens/settings/ContactScreen'
+import { PrivacyPolicyScreen } from '@/screens/settings/PrivacyPolicyScreen'
 
 /**
  * 設定画面（UI仕様 6章）。
  * セクションの順番: 記録の設定 → 顔文字 → アプリ設定 → データ → アプリについて。
  *
- * 設定の下の画面（書き出し・読み込み・お問い合わせ先）は、広告・タブバーを出したままにするため
+ * 設定の下の画面（書き出し・読み込み・お問い合わせ先・プライバシーポリシーの URL）は、広告・タブバーを出したままにするため
  * このタブの中で切り替える（view）。タブを移ると設定の最初の画面に戻り、途中の書き出し・確認内容は捨てる。
  *
  * 無料版は問い1つのみ。問いの追加・削除・切り替え、顔文字カスタム、プラン関連の表示・開発用トグルは置かない。
  */
-type View_ = 'main' | 'export' | 'import' | 'contact'
+type View_ = 'main' | 'export' | 'import' | 'contact' | 'privacy'
 
 export default function SettingsScreen() {
   const { colors } = useTheme()
@@ -58,6 +60,7 @@ export default function SettingsScreen() {
       {view === 'export' && <ExportScreen onBack={backToMain} />}
       {view === 'import' && <ImportScreen onBack={backToMain} onDone={backToMain} />}
       {view === 'contact' && <ContactScreen onBack={backToMain} />}
+      {view === 'privacy' && <PrivacyPolicyScreen onBack={backToMain} />}
     </SafeAreaView>
   )
 }
@@ -110,6 +113,12 @@ const SettingsMain: React.FC<{ onOpen: (v: View_) => void }> = ({ onOpen }) => {
     const url = buildMailtoUrl(settings.language, getAppVersion(), getOsVersion())
     const result = await openContactMail((u) => Linking.openURL(u), url)
     if (result === 'fallback') onOpen('contact')
+  }
+
+  // プライバシーポリシー: 端末のブラウザで開く。開けなかったら URL を表示する画面に切り替える（お問い合わせと同じ方針）
+  const handlePrivacyPolicy = async () => {
+    const result = await openPrivacyPolicy((u) => Linking.openURL(u))
+    if (result === 'fallback') onOpen('privacy')
   }
 
   return (
@@ -240,7 +249,7 @@ const SettingsMain: React.FC<{ onOpen: (v: View_) => void }> = ({ onOpen }) => {
           {resetFailed && <Text style={styles.errorText}>{s.resetFailed}</Text>}
         </Section>
 
-        {/* アプリについて（プライバシーポリシーの行は URL が決まってから出す: Sprint 19 の残り） */}
+        {/* アプリについて（デベロッパー → バージョン → お問い合わせ → プライバシーポリシー。製品仕様 U9） */}
         <Section title={s.sectionAbout} styles={styles}>
           <View style={styles.rowBtn}>
             <Text style={styles.rowBtnText}>{s.developer}</Text>
@@ -251,6 +260,7 @@ const SettingsMain: React.FC<{ onOpen: (v: View_) => void }> = ({ onOpen }) => {
             <Text style={styles.rowValue}>{getAppVersion()}</Text>
           </View>
           <RowButton label={s.contact} onPress={handleContact} styles={styles} />
+          <RowButton label={s.privacyPolicy} onPress={handlePrivacyPolicy} styles={styles} />
         </Section>
       </ScrollView>
 

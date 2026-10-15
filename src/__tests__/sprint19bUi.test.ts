@@ -146,10 +146,7 @@ test('一言の入力欄に maxLength を付けない（長い一言を切り詰
   }
 })
 
-test('app.json の version は 1.2.5（19b 第5回評価 R5-A の修正で PATCH を上げる）', () => {
-  const appJson = JSON.parse(read('app.json'))
-  assert.equal(appJson.expo.version, '1.2.5')
-})
+// app.json の version の確認は Sprint 19c（ストア申請の 2.0.0）で src/__tests__/sprint19cRelease.test.ts に移した
 
 test('カレンダーのセルは絵文字（DEFAULT_EMOJI_SET）、ポップアップは顔文字', () => {
   const code = stripComments(read('app/(tabs)/calendar.tsx'))
