@@ -18,6 +18,12 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
+# EAS local credentials (signing info) - never commit
+credentials.json
+
+# bundletool dump output etc. (temporary files for inspection)
+/manifest.txt
+
 # Metro
 .metro-health-check*
 
