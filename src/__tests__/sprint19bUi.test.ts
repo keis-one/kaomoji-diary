@@ -75,15 +75,7 @@ test('通知の予約・解除はストアの共通の処理を通す（画面�
   assert.match(stripComments(read('app/onboarding.tsx')), /finishOnboarding\(/)
 })
 
-test('ホームのボタンは「記録する」／「編集する」（UI仕様 3章）、英語は Save／Edit', () => {
-  assert.equal(STRINGS.ja.homeRecord, '記録する')
-  assert.equal(STRINGS.ja.homeEdit, '編集する')
-  assert.equal(STRINGS.en.homeRecord, 'Save')
-  assert.equal(STRINGS.en.homeEdit, 'Edit')
-  const code = stripComments(read('app/(tabs)/index.tsx'))
-  assert.match(code, /homeButtonMode\(todayEntry\) === 'edit'\s*\?\s*t\(settings\.language\)\.homeEdit\s*:\s*t\(settings\.language\)\.homeRecord/)
-  assert.doesNotMatch(code, /'更新'|'Update'/)
-})
+// ホームのボタンの文言は Sprint 20 で「保存する」／Save に統一した（src/__tests__/sprint20Ui.test.ts）
 
 test('A4 広告は高さ固定の 320×50（BANNER）で、枠の高さは読み込みの状態に関係なく adSlotHeight', () => {
   const code = stripComments(read('src/components/AdBanner.native.tsx'))
@@ -133,9 +125,10 @@ test('広告・タブバー: 書き出し・読み込み・お問い合わせ先
 })
 
 test('カレンダー: 未来の日は押せず、今日も過去日と同じポップアップを開く（ホームへ移らない）', () => {
+  // Sprint 20 でマスは MonthGrid に分けた。カレンダーは表示時の処理（useFocusEffect）のため expo-router を読み込むが、画面は移らない
+  assert.match(stripComments(read('src/components/MonthGrid.tsx')), /disabled=\{isFuture\}/)
   const code = stripComments(read('app/(tabs)/calendar.tsx'))
-  assert.match(code, /disabled=\{isFuture\}/)
-  assert.doesNotMatch(code, /router|navigate|href/)
+  assert.doesNotMatch(code, /router\.|navigate\(|href/)
 })
 
 test('一言の入力欄に maxLength を付けない（長い一言を切り詰めない。U6）', () => {
@@ -148,8 +141,4 @@ test('一言の入力欄に maxLength を付けない（長い一言を切り詰
 
 // app.json の version の確認は Sprint 19c（ストア申請の 2.0.0）で src/__tests__/sprint19cRelease.test.ts に移した
 
-test('カレンダーのセルは絵文字（DEFAULT_EMOJI_SET）、ポップアップは顔文字', () => {
-  const code = stripComments(read('app/(tabs)/calendar.tsx'))
-  assert.match(code, /const emojiSet = DEFAULT_EMOJI_SET/)
-  assert.match(code, /\{emojiSet\[entry\.level\]\}/)
-})
+// カレンダーのセルは Sprint 20 で絵文字から顔文字に変えた（src/__tests__/sprint20Ui.test.ts の S20-5）

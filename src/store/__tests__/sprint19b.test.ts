@@ -3,7 +3,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { MemoryStorage, MockNotifier, boot, entry, freeState, q, sortEntries } from './helpers'
-import { calcStreak, shouldShowStreak, homeButtonMode, findEntry } from '@/domain/entries'
+import { calcStreak, shouldShowStreak, findEntry } from '@/domain/entries'
 import { checkCommentEdit } from '@/domain/dayEditor'
 import { analyzeImportFile } from '@/domain/csv/importer'
 import { buildExportCsv } from '@/domain/csv/format'
@@ -41,10 +41,11 @@ test('今日の削除: 2026-10-07 の記録を削除すると、ホームは「�
   const storage = new MemoryStorage()
   storage.putState(freeState([entry(TODAY, 'q1', 5)]))
   const s = await boot(storage, new MockNotifier())
-  assert.equal(homeButtonMode(findEntry(s.getState().entries, TODAY, 'q1')), 'edit')
+  assert.ok(findEntry(s.getState().entries, TODAY, 'q1'))
   const r = await deleteDayEntry(s.getState().deleteEntry, TODAY, 'q1')
   assert.deepEqual(r, { ok: true, toast: 'deleted' })
-  assert.equal(homeButtonMode(findEntry(s.getState().entries, TODAY, 'q1')), 'record')
+  // Sprint 20 以降、ホームのボタンは「保存する」のまま。今日の記録が無い＝顔文字が未選択で押せない状態
+  assert.equal(findEntry(s.getState().entries, TODAY, 'q1'), undefined)
 })
 
 test('連続記録: 10/05〜10/07 で 3 → 10/06 を削除すると 1（ホームでは表示しない）→ 記録し直すと 3', async () => {

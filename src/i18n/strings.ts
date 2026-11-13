@@ -29,9 +29,10 @@ const ja = {
   // オンボーディング
   onboardingSaveFailed: '保存できませんでした。もう一度お試しください',
 
-  // ホーム（UI仕様 3章: 記録が無ければ「記録する」、記録済みなら「編集する」）
-  homeRecord: '記録する',
-  homeEdit: '編集する',
+  // ホーム（UI仕様 3章: 記録の有無にかかわらず「保存する」。Sprint 20）
+  homeSave: '保存する',
+  shareButton: '📤 SNS にシェア',
+  streakLabel: (n: number) => `🔥 ${n}日連続記録中！`,
   homeSaveFailed: '保存できませんでした。もう一度お試しください',
   // リマインダーを設定できなかったとき（許可の拒否・予約の失敗）。リマインダーは OFF に戻っている
   reminderSetupFailed: '通知を設定できませんでした（端末の通知の許可を確認してください）',
@@ -47,6 +48,10 @@ const ja = {
   deleteConfirmTitle: 'この日の記録を削除しますか？',
   deleteConfirmBody: (dateLabel: string) => `${dateLabel}の記録（顔文字・一言）を削除します。元に戻せません。`,
   deleteConfirmOk: '削除する',
+
+  // 保存しましたシート（Sprint 20。見出しは全レベル共通・「♪」は付けない）
+  savedTitle: '保存しました',
+  close: '閉じる',
 
   // 設定
   settingsTitle: '設定',
@@ -186,8 +191,9 @@ const en: Strings = {
 
   onboardingSaveFailed: "Couldn't save. Please try again.",
 
-  homeRecord: 'Save',
-  homeEdit: 'Edit',
+  homeSave: 'Save',
+  shareButton: '📤 Share',
+  streakLabel: (n) => `🔥 ${n} day streak!`,
   homeSaveFailed: "Couldn't save. Please try again.",
   reminderSetupFailed: "Couldn't set up the reminder. (Please check your device's notification permission.)",
   dismiss: 'Dismiss',
@@ -201,6 +207,9 @@ const en: Strings = {
   deleteConfirmTitle: "Delete this day's record?",
   deleteConfirmBody: (dateLabel) => `The record for ${dateLabel} (kaomoji and note) will be deleted. This cannot be undone.`,
   deleteConfirmOk: 'Delete',
+
+  savedTitle: 'Saved',
+  close: 'Close',
 
   settingsTitle: 'Settings',
   sectionRecord: 'Question',

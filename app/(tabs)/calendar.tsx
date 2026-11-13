@@ -1,28 +1,44 @@
-import React, { useState, useMemo } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
-  View,
-  Text,
+  Animated,
+  Easing,
+  PanResponder,
   Pressable,
-  StyleSheet,
   ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useFocusEffect } from 'expo-router'
 import { useDiaryStore } from '@/store'
+import { savedFlow } from '@/store/savedFlow'
 import { useSettings } from '@/hooks/useSettings'
 import { useTheme } from '@/hooks/useTheme'
+import { useStats } from '@/hooks/useStats'
+import { useReduceMotion } from '@/hooks/useReduceMotion'
+import { useShareToday } from '@/hooks/useShareToday'
 import { DayPopup } from '@/components/DayPopup'
+import { SavedSheet } from '@/components/SavedSheet'
+import { MonthGrid, GRID_HORIZONTAL_INSET, type CellStamp, type KaomojiMeasure } from '@/components/MonthGrid'
+import { KaomojiMeasurer } from '@/components/KaomojiMeasurer'
 import type { AppColors } from '@/constants/colors'
-import {
-  formatMonthHeader,
-  getDaysInMonth,
-  getMonthStartOffset,
-  WEEKDAY_LABELS,
-  todayIso,
-} from '@/utils/date'
-import { DEFAULT_EMOJI_SET } from '@/constants/kaomoji'
+import { formatMonthHeader, WEEKDAY_LABELS, todayIso } from '@/utils/date'
 import type { KaomojiLevel } from '@/types'
 import { dayTapAction } from '@/domain/dayEditor'
-import { submitDayEntry, deleteDayEntry } from '@/domain/dayActions'
+import { submitDayEntry, deleteDayEntry, shouldStampAfterDayAction } from '@/domain/dayActions'
+import { effectsFor, SAVED_FLOW_TIMING } from '@/domain/celebration'
+import { decideMonthSwipe, lockMonthSwipe } from '@/domain/gestures'
+
+type YearMonth = { year: number; month: number }
+const addMonths = (v: YearMonth, k: number): YearMonth => {
+  const t = v.year * 12 + (v.month - 1) + k
+  return { year: Math.floor(t / 12), month: (t % 12) + 1 }
+}
+const EMPTY_SET = { 1: '', 2: '', 3: '', 4: '', 5: '' }
+const SLIDE_MS = 240
+const SNAP_BACK_MS = 200
 
 export default function CalendarScreen() {
   const saveEntry = useDiaryStore((s) => s.saveEntry)
@@ -32,68 +48,192 @@ export default function CalendarScreen() {
     () => Object.fromEntries(entries.map((e) => [`${e.questionId}:${e.date}`, e])),
     [entries],
   )
-  const getEntry = (date: string, questionId: string) => entryMap[`${questionId}:${date}`]
   const { settings, activeQuestion } = useSettings()
+  const { colors, isDark } = useTheme()
+  const { stats } = useStats()
+  const reduceMotion = useReduceMotion()
+  const shareToday = useShareToday()
+  const { width: screenW } = useWindowDimensions()
+  const styles = useMemo(() => makeStyles(colors), [colors])
 
-  const today = new Date()
-  const [viewYear, setViewYear] = useState(today.getFullYear())
-  const [viewMonth, setViewMonth] = useState(today.getMonth() + 1)
+  const questionId = activeQuestion?.id ?? ''
+  const getEntry = useCallback((date: string) => entryMap[`${questionId}:${date}`], [entryMap, questionId])
+  const kaomojiSet = activeQuestion?.kaomojiSet ?? settings.questions[0]?.kaomojiSet ?? EMPTY_SET
+
+  const [view, setView] = useState<YearMonth>(() => {
+    const d = new Date()
+    return { year: d.getFullYear(), month: d.getMonth() + 1 }
+  })
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [popupVisible, setPopupVisible] = useState(false)
-
-  const days = getDaysInMonth(viewYear, viewMonth)
-  const offset = getMonthStartOffset(viewYear, viewMonth)
-  const weekdays = WEEKDAY_LABELS[settings.language]
-
-  const prevMonth = () => {
-    if (viewMonth === 1) { setViewMonth(12); setViewYear((y) => y - 1) }
-    else setViewMonth((m) => m - 1)
-  }
-  const nextMonth = () => {
-    if (viewMonth === 12) { setViewMonth(1); setViewYear((y) => y + 1) }
-    else setViewMonth((m) => m + 1)
-  }
+  // 保存しましたシート（閉じる動きの間も中身を出しておくため、開閉と中身を分けて持つ）
+  const [savedOpen, setSavedOpen] = useState(false)
+  const [saved, setSaved] = useState<{ date: string; level: KaomojiLevel } | null>(null)
+  const [stamp, setStamp] = useState<CellStamp | null>(null)
+  const [measure, setMeasure] = useState<KaomojiMeasure | null>(null)
 
   const todayStr = todayIso()
+  const weekdays = WEEKDAY_LABELS[settings.language]
+  const cellWidth = (screenW - GRID_HORIZONTAL_INSET) / 7
 
+  // ---------- スタンプ ----------
+  const stampSeq = useRef(0)
+  const reduceMotionRef = useRef(reduceMotion)
+  reduceMotionRef.current = reduceMotion
+  const playStamp = useCallback((date: string, level: KaomojiLevel) => {
+    const fx = effectsFor(level, reduceMotionRef.current)
+    stampSeq.current += 1
+    setStamp({ date, key: stampSeq.current, kind: fx.stamp, shake: fx.shake })
+  }, [])
+  const editStampTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (editStampTimer.current) clearTimeout(editStampTimer.current)
+  }, [])
+
+  // ---------- ホームで保存した後の流れ（S20-2） ----------
+  useEffect(
+    () =>
+      savedFlow.subscribe((e) => {
+        if (e.type === 'stamp') {
+          playStamp(e.date, e.level)
+        } else {
+          setSaved({ date: e.date, level: e.level })
+          setSavedOpen(true)
+        }
+      }),
+    [playStamp],
+  )
+  useFocusEffect(
+    useCallback(() => {
+      // ホームで保存してきたときは、前に見ていた月に関係なく今日の月を出す
+      const m = savedFlow.calendarShown()
+      if (m) setView(m)
+      // 別のタブへ移ったら、まだ始まっていないスタンプ・シートを取り消す（戻っても再生しない）
+      return () => savedFlow.cancel()
+    }, []),
+  )
+
+  // ---------- 月の切り替え（‹ › ・左右スワイプ。S20-6） ----------
+  const translateX = useRef(new Animated.Value(-screenW)).current
+  const animating = useRef(false)
+  const widthRef = useRef(screenW)
+  widthRef.current = screenW
+
+  // 表示する月・幅が変わったら、真ん中の月が見える位置に戻す（描き直しと同じタイミング）
+  // 月が変わるとマスを作り直すので、押し終わったスタンプを消しておく（戻ってきたときに押し直さない）
+  useLayoutEffect(() => {
+    translateX.setValue(-screenW)
+    animating.current = false
+    setStamp(null)
+  }, [view, screenW, translateX])
+
+  const changeMonth = useCallback(
+    (dir: 1 | -1) => {
+      if (animating.current) return
+      savedFlow.cancel() // 月を切り替えたら、保存した後のまだ始まっていない演出を取り消す
+      animating.current = true
+      const W = widthRef.current
+      Animated.timing(translateX, {
+        toValue: dir > 0 ? -2 * W : 0,
+        duration: SLIDE_MS,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setView((v) => addMonths(v, dir))
+        else animating.current = false
+      })
+    },
+    [translateX],
+  )
+  const changeMonthRef = useRef(changeMonth)
+  changeMonthRef.current = changeMonth
+
+  const swipe = useRef<{ lock: 'horizontal' | 'vertical' | null }>({ lock: null })
+  const finishSwipe = (decision: 'next' | 'prev' | 'stay') => {
+    if (decision === 'stay') {
+      Animated.timing(translateX, {
+        toValue: -widthRef.current,
+        duration: SNAP_BACK_MS,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }).start()
+      return
+    }
+    changeMonthRef.current(decision === 'next' ? 1 : -1)
+  }
+  const finishSwipeRef = useRef(finishSwipe)
+  finishSwipeRef.current = finishSwipe
+
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        // 指を置いた時点ではマス（日付のタップ）に任せ、横に動いたときだけ月の切り替えにする
+        onStartShouldSetPanResponderCapture: () => {
+          swipe.current.lock = null
+          return false
+        },
+        onMoveShouldSetPanResponderCapture: (_, g) => {
+          if (animating.current) return false
+          if (swipe.current.lock === null) swipe.current.lock = lockMonthSwipe(g.dx, g.dy)
+          return swipe.current.lock === 'horizontal'
+        },
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderMove: (_, g) => {
+          translateX.setValue(-widthRef.current + g.dx)
+        },
+        onPanResponderRelease: (_, g) => {
+          finishSwipeRef.current(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: false }))
+        },
+        onPanResponderTerminate: (_, g) => {
+          finishSwipeRef.current(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: true }))
+        },
+      }),
+    [translateX],
+  )
+
+  // ---------- 日のタップ・編集シート ----------
   // 今日と過去日は入力・編集ポップアップを開く（範囲の制限なし）。未来の日は何もしない（U8）
-  const openDay = (date: string) => {
+  const openDay = useCallback((date: string) => {
     if (dayTapAction(date, todayIso()) !== 'open') return
+    savedFlow.cancel() // 保存しましたシートは出さず、編集シートだけを開く（2 つのシートを重ねない）
     setSelectedDate(date)
     setPopupVisible(true)
-  }
+  }, [])
 
-  const handleSubmit = (level: KaomojiLevel, comment: string) =>
-    submitDayEntry(saveEntry, {
-      date: selectedDate as string,
-      questionId: activeQuestion?.id ?? '',
+  const selectedEntry = selectedDate ? getEntry(selectedDate) : undefined
+
+  const handleSubmit = async (level: KaomojiLevel, comment: string) => {
+    const date = selectedDate as string
+    const r = await submitDayEntry(saveEntry, {
+      date,
+      questionId,
       level,
       comment,
       hadEntry: !!selectedEntry,
     })
+    // 編集シートで保存したときも、シートが閉じてからそのマスにスタンプを押す（保存しましたシートは出さない。S20-3）
+    if (shouldStampAfterDayAction(r)) {
+      if (editStampTimer.current) clearTimeout(editStampTimer.current)
+      editStampTimer.current = setTimeout(() => playStamp(date, level), SAVED_FLOW_TIMING.editStampDelayMs)
+    }
+    return r
+  }
 
-  const handleDelete = () => deleteDayEntry(deleteEntry, selectedDate as string, activeQuestion?.id ?? '')
+  const handleDelete = () => deleteDayEntry(deleteEntry, selectedDate as string, questionId)
 
-  const selectedEntry = selectedDate && activeQuestion
-    ? getEntry(selectedDate, activeQuestion.id)
-    : undefined
-
-  // セルには絵文字、ポップアップには顔文字を出す（UI仕様 4章・要件定義書 8章のハイブリッド方式）
-  const emojiSet = DEFAULT_EMOJI_SET
-  const { colors } = useTheme()
-  const styles = makeStyles(colors)
+  const savedEntry = saved ? getEntry(saved.date) : undefined
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView>
         <View style={styles.header}>
-          <Pressable onPress={prevMonth} style={styles.navBtn}>
+          <Pressable onPress={() => changeMonth(-1)} style={styles.navBtn} accessibilityLabel={settings.language === 'ja' ? '前の月' : 'Previous month'}>
             <Text style={styles.navText}>‹</Text>
           </Pressable>
           <Text style={styles.monthLabel}>
-            {formatMonthHeader(new Date(viewYear, viewMonth - 1), settings.language)}
+            {formatMonthHeader(new Date(view.year, view.month - 1), settings.language)}
           </Text>
-          <Pressable onPress={nextMonth} style={styles.navBtn}>
+          <Pressable onPress={() => changeMonth(1)} style={styles.navBtn} accessibilityLabel={settings.language === 'ja' ? '次の月' : 'Next month'}>
             <Text style={styles.navText}>›</Text>
           </Pressable>
         </View>
@@ -104,46 +244,60 @@ export default function CalendarScreen() {
           ))}
         </View>
 
-        <View style={styles.grid}>
-          {Array.from({ length: offset }).map((_, i) => (
-            <View key={`pad-${i}`} style={styles.cell} />
-          ))}
-          {days.map((date) => {
-            const entry = activeQuestion ? getEntry(date, activeQuestion.id) : undefined
-            const dayNum = parseInt(date.split('-')[2])
-            const isToday = date === todayStr
-            const isFuture = dayTapAction(date, todayStr) === 'none'
-            return (
-              <Pressable
-                key={date}
-                style={[styles.cell, isToday && styles.cellToday, isFuture && styles.cellFuture]}
-                onPress={() => openDay(date)}
-                disabled={isFuture}
-              >
-                <Text style={[styles.dayNum, isToday && styles.dayNumToday]}>
-                  {dayNum}
-                </Text>
-                {entry && (
-                  <Text style={styles.emoji} numberOfLines={1} adjustsFontSizeToFit>
-                    {emojiSet[entry.level]}
-                  </Text>
-                )}
-              </Pressable>
-            )
-          })}
+        {/* 前の月・表示中の月・次の月を横に並べ、指の動きに合わせて動かす */}
+        <View style={styles.swipeArea} {...pan.panHandlers}>
+          <Animated.View style={[styles.track, { width: screenW * 3, transform: [{ translateX }] }]}>
+            {[-1, 0, 1].map((k) => {
+              const ym = addMonths(view, k)
+              return (
+                <View key={k} style={{ width: screenW }}>
+                  <MonthGrid
+                    year={ym.year}
+                    month={ym.month}
+                    today={todayStr}
+                    cellWidth={cellWidth}
+                    entryFor={getEntry}
+                    kaomojiSet={kaomojiSet}
+                    measure={measure}
+                    stamp={k === 0 ? stamp : null}
+                    onPressDay={openDay}
+                    colors={colors}
+                  />
+                </View>
+              )
+            })}
+          </Animated.View>
         </View>
       </ScrollView>
+
+      <KaomojiMeasurer kaomojiSet={kaomojiSet} onMeasured={setMeasure} />
 
       <DayPopup
         visible={popupVisible}
         date={selectedDate}
         entry={selectedEntry}
-        kaomojiSet={activeQuestion?.kaomojiSet ?? settings.questions[0]?.kaomojiSet ?? { 1: '', 2: '', 3: '', 4: '', 5: '' }}
+        kaomojiSet={kaomojiSet}
         questionLabel={activeQuestion?.label ?? ''}
         language={settings.language}
         onSubmit={handleSubmit}
         onDelete={handleDelete}
         onClose={() => setPopupVisible(false)}
+      />
+
+      <SavedSheet
+        visible={savedOpen}
+        date={saved?.date ?? null}
+        level={saved?.level ?? null}
+        entry={savedEntry}
+        kaomojiSet={kaomojiSet}
+        questionLabel={activeQuestion?.label ?? ''}
+        language={settings.language}
+        streak={stats.currentStreak}
+        reduceMotion={reduceMotion}
+        colors={colors}
+        isDark={isDark}
+        onShare={shareToday}
+        onClose={() => setSavedOpen(false)}
       />
     </SafeAreaView>
   )
@@ -160,18 +314,6 @@ const makeStyles = (c: AppColors) => StyleSheet.create({
   monthLabel: { fontSize: 18, fontWeight: '600', color: c.text },
   weekRow: { flexDirection: 'row', paddingHorizontal: 8, marginBottom: 4 },
   weekday: { flex: 1, textAlign: 'center', fontSize: 12, color: c.textMuted, fontWeight: '500' },
-  grid: {
-    flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 8,
-    borderTopWidth: 1, borderLeftWidth: 1, borderColor: c.border, marginHorizontal: 8,
-  },
-  cell: {
-    width: `${100 / 7}%`, aspectRatio: 1, alignItems: 'center',
-    justifyContent: 'center', padding: 2,
-    borderRightWidth: 1, borderBottomWidth: 1, borderColor: c.border,
-  },
-  cellToday: { backgroundColor: c.accentLight },
-  cellFuture: { opacity: 0.35 },
-  dayNum: { fontSize: 12, color: c.textSecondary, fontWeight: '500' },
-  dayNumToday: { color: c.accentDark, fontWeight: '700' },
-  emoji: { fontSize: 18, lineHeight: 22, color: c.text },
+  swipeArea: { overflow: 'hidden' },
+  track: { flexDirection: 'row', alignItems: 'flex-start' },
 })

@@ -6,9 +6,12 @@
  * - 「キャンセル」・外側のタップ・戻る操作: 保存せずに閉じる
  * - 保存・削除の処理中はボタンを押せない。失敗したら開いたままエラーを出し、入力は残す（成功のトーストは出さない）
  * - 一言は変更したときだけ 100 文字の上限を当てはめる（U6）
+ * - 下スワイプで閉じる（Sprint 20）。「キャンセル」と同じで保存しない。削除の確認中・処理中・入力欄の中から始めた操作では閉じない
+ *   （シートの共通の動き・キーボードの扱いは BottomSheet）
  */
 import React, { useState, useEffect } from 'react'
-import { Modal, View, Text, Pressable, TextInput, StyleSheet, ScrollView, Keyboard, Platform } from 'react-native'
+import { View, Text, Pressable, TextInput, StyleSheet } from 'react-native'
+import { BottomSheet } from './BottomSheet'
 import type { DiaryEntry, KaomojiSet, Language, KaomojiLevel } from '@/types'
 import { KaomojiSelector } from './KaomojiSelector'
 import { getDayOfWeek, getWhatDay } from '@/utils/dayInfo'
@@ -50,21 +53,10 @@ export const DayPopup: React.FC<Props> = ({
 }) => {
   const [level, setLevel] = useState<KaomojiLevel | null>(entry?.level ?? null)
   const [comment, setComment] = useState(entry?.comment ?? '')
-  const [keyboardOffset, setKeyboardOffset] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const s = t(language)
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') return
-    const show = Keyboard.addListener('keyboardDidShow', (e) => setKeyboardOffset(e.endCoordinates.height))
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardOffset(0))
-    return () => {
-      show.remove()
-      hide.remove()
-    }
-  }, [])
 
   // 開くたびに保存済みの内容から始める（前回キャンセルした入力を持ち越さない）
   useEffect(() => {
@@ -126,84 +118,80 @@ export const DayPopup: React.FC<Props> = ({
   const whatDay = date ? getWhatDay(date, language) : null
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
-      <Pressable style={styles.backdrop} onPress={close}>
-        <View style={[styles.wrapper, { paddingBottom: keyboardOffset }]}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetContent}>
-              <View style={styles.handle} />
-
-              <Text style={styles.dateText}>{dateLabel}</Text>
-              {whatDay && <Text style={styles.whatDayText}>{isJa ? `「${whatDay}」` : whatDay}</Text>}
-              <Text style={styles.questionText}>
-                {isJa ? `今日、${questionLabel}できた？` : `Did you ${questionLabel} today?`}
-              </Text>
-
-              {level !== null && <Text style={styles.bigKaomoji}>{kaomojiSet[level]}</Text>}
-
-              <KaomojiSelector kaomojiSet={kaomojiSet} selected={level} onSelect={setLevel} language={language} />
-
-              <TextInput
-                style={styles.commentInput}
-                placeholder={isJa ? '一言メモ（任意）' : 'Note (optional)'}
-                value={comment}
-                onChangeText={setComment}
-                multiline
-                editable={!busy}
-              />
-              {commentCheck.tooLong && <Text style={styles.errorText}>{s.commentTooLong(commentCheck.length)}</Text>}
-              {error && <Text style={styles.errorText}>{error}</Text>}
-
+    <BottomSheet
+      visible={visible}
+      onRequestClose={close}
+      onDragDismiss={onClose}
+      dragBlocked={busy || confirmingDelete}
+      overlay={
+        confirmingDelete ? (
+          // 記録の削除の確認ダイアログ（ポップアップの上に重ねる）
+          <View style={styles.confirmOverlay}>
+            <View style={styles.confirmCard}>
+              <Text style={styles.confirmTitle}>{s.deleteConfirmTitle}</Text>
+              <Text style={styles.confirmBody}>{s.deleteConfirmBody(dateLabel)}</Text>
               <View style={styles.actions}>
-                <Pressable onPress={close} style={[styles.btn, styles.btnCancel]} disabled={busy}>
+                <Pressable onPress={() => setConfirmingDelete(false)} style={[styles.btn, styles.btnCancel]} disabled={busy}>
                   <Text style={styles.btnCancelText}>{s.cancel}</Text>
                 </Pressable>
-                <Pressable
-                  onPress={handleSubmit}
-                  style={[styles.btn, styles.btnSave, !canSubmit && styles.btnDisabled]}
-                  disabled={!canSubmit}
-                >
-                  <Text style={styles.btnSaveText}>{mode === 'save' ? s.popupSave : s.popupRecord}</Text>
+                <Pressable onPress={handleDelete} style={[styles.btn, styles.btnDanger, busy && styles.btnDisabled]} disabled={busy}>
+                  <Text style={styles.btnSaveText}>{s.deleteConfirmOk}</Text>
                 </Pressable>
               </View>
+            </View>
+          </View>
+        ) : null
+      }
+    >
+      {({ markInputTouch }) => (
+        <>
+          <Text style={styles.dateText}>{dateLabel}</Text>
+          {whatDay && <Text style={styles.whatDayText}>{isJa ? `「${whatDay}」` : whatDay}</Text>}
+          <Text style={styles.questionText}>
+            {isJa ? `今日、${questionLabel}できた？` : `Did you ${questionLabel} today?`}
+          </Text>
 
-              {entry && (
-                <Pressable onPress={() => setConfirmingDelete(true)} disabled={busy} style={styles.deleteLink}>
-                  <Text style={[styles.deleteText, busy && styles.textDisabled]}>{s.popupDelete}</Text>
-                </Pressable>
-              )}
-            </ScrollView>
+          {level !== null && <Text style={styles.bigKaomoji}>{kaomojiSet[level]}</Text>}
 
-            {confirmingDelete && (
-              // 記録の削除の確認ダイアログ（ポップアップの上に重ねる）
-              <View style={styles.confirmOverlay}>
-                <View style={styles.confirmCard}>
-                  <Text style={styles.confirmTitle}>{s.deleteConfirmTitle}</Text>
-                  <Text style={styles.confirmBody}>{s.deleteConfirmBody(dateLabel)}</Text>
-                  <View style={styles.actions}>
-                    <Pressable onPress={() => setConfirmingDelete(false)} style={[styles.btn, styles.btnCancel]} disabled={busy}>
-                      <Text style={styles.btnCancelText}>{s.cancel}</Text>
-                    </Pressable>
-                    <Pressable onPress={handleDelete} style={[styles.btn, styles.btnDanger, busy && styles.btnDisabled]} disabled={busy}>
-                      <Text style={styles.btnSaveText}>{s.deleteConfirmOk}</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            )}
-          </Pressable>
-        </View>
-      </Pressable>
-    </Modal>
+          <KaomojiSelector kaomojiSet={kaomojiSet} selected={level} onSelect={setLevel} language={language} />
+
+          <TextInput
+            style={styles.commentInput}
+            placeholder={isJa ? '一言メモ（任意）' : 'Note (optional)'}
+            value={comment}
+            onChangeText={setComment}
+            onTouchStart={markInputTouch}
+            multiline
+            editable={!busy}
+          />
+          {commentCheck.tooLong && <Text style={styles.errorText}>{s.commentTooLong(commentCheck.length)}</Text>}
+          {error && <Text style={styles.errorText}>{error}</Text>}
+
+          <View style={styles.actions}>
+            <Pressable onPress={close} style={[styles.btn, styles.btnCancel]} disabled={busy}>
+              <Text style={styles.btnCancelText}>{s.cancel}</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleSubmit}
+              style={[styles.btn, styles.btnSave, !canSubmit && styles.btnDisabled]}
+              disabled={!canSubmit}
+            >
+              <Text style={styles.btnSaveText}>{mode === 'save' ? s.popupSave : s.popupRecord}</Text>
+            </Pressable>
+          </View>
+
+          {entry && (
+            <Pressable onPress={() => setConfirmingDelete(true)} disabled={busy} style={styles.deleteLink}>
+              <Text style={[styles.deleteText, busy && styles.textDisabled]}>{s.popupDelete}</Text>
+            </Pressable>
+          )}
+        </>
+      )}
+    </BottomSheet>
   )
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  wrapper: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 36 },
-  sheetContent: { gap: 12 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#ddd', alignSelf: 'center', marginBottom: 8 },
   dateText: { fontSize: 14, color: '#999', textAlign: 'center', fontWeight: '500' },
   whatDayText: { fontSize: 12, color: '#66bb6a', textAlign: 'center', fontWeight: '500' },
   questionText: { fontSize: 16, fontWeight: '600', color: '#333', textAlign: 'center' },

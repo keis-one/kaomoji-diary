@@ -32,3 +32,6 @@ export const deleteDayEntry = async (
     return { ok: false, error: 'deleteFailed' }
   }
 }
+
+/** 編集シートの結果のあと、その日のマスにスタンプを押すか（記録する・保存に成功したときだけ。削除・失敗では押さない。S20-3） */
+export const shouldStampAfterDayAction = (r: DayActionResult): boolean => r.ok && r.toast !== 'deleted'

@@ -10,29 +10,32 @@ import {
   Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
 import { useDiary } from '@/hooks/useDiary'
 import { useSettings } from '@/hooks/useSettings'
 import { useStats } from '@/hooks/useStats'
 import { useTheme } from '@/hooks/useTheme'
 import { KaomojiSelector } from '@/components/KaomojiSelector'
 import { todayIso } from '@/utils/date'
-import { shareEntry } from '@/utils/share'
+import { useShareToday } from '@/hooks/useShareToday'
+import { savedFlow } from '@/store/savedFlow'
+import { saveTodayFromHome } from '@/domain/savedFlow'
 import { getDayOfWeek, getWhatDay } from '@/utils/dayInfo'
 import type { AppColors } from '@/constants/colors'
 import type { KaomojiLevel } from '@/types'
 import { checkCommentEdit } from '@/domain/dayEditor'
-import { homeButtonMode, shouldShowStreak } from '@/domain/entries'
+import { shouldShowStreak } from '@/domain/entries'
 import { t } from '@/i18n/strings'
 import { useDiaryStore } from '@/store'
 
 export default function HomeScreen() {
   const { todayEntry, record } = useDiary()
+  const shareToday = useShareToday()
   const { settings, activeQuestion } = useSettings()
   const { stats } = useStats()
   const { colors } = useTheme()
   const [level, setLevel] = useState<KaomojiLevel | null>(todayEntry?.level ?? null)
   const [comment, setComment] = useState(todayEntry?.comment ?? '')
-  const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveFailed, setSaveFailed] = useState(false)
   // オンボーディング等でリマインダーを設定できなかったとき（リマインダーは OFF に戻っている）
@@ -43,7 +46,6 @@ export default function HomeScreen() {
   React.useEffect(() => {
     setLevel(todayEntry?.level ?? null)
     setComment(todayEntry?.comment ?? '')
-    setSaved(false)
     setSaveFailed(false)
   }, [todayEntry, settings.activeQuestionId])
 
@@ -51,29 +53,22 @@ export default function HomeScreen() {
   const commentCheck = checkCommentEdit(todayEntry?.comment ?? '', comment)
   const canSave = !!level && commentCheck.ok && !saving
 
+  // 保存に成功したらカレンダーへ移り、今日のマスにスタンプ → 保存しましたシート（S20-2）。トーストは出さない。
+  // 失敗したらホームにとどまり、エラーの文を出す
   const handleSave = async () => {
     if (!level || !canSave) return
     setSaving(true)
     setSaveFailed(false)
-    try {
-      await record(level, comment)
-      setSaved(true)
-    } catch {
-      setSaveFailed(true)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleShare = async () => {
-    if (!todayEntry || !activeQuestion) return
-    await shareEntry({
-      entry: todayEntry,
-      kaomojiSet: activeQuestion.kaomojiSet,
-      question: activeQuestion.label,
-      language: settings.language,
-      streak: stats.currentStreak,
+    const r = await saveTodayFromHome({
+      record,
+      level,
+      comment,
+      today: todayIso(),
+      startFlow: (a) => savedFlow.start(a),
+      navigateToCalendar: () => router.navigate('/calendar'),
     })
+    if (!r.ok) setSaveFailed(true)
+    setSaving(false)
   }
 
   const today = todayIso()
@@ -85,6 +80,7 @@ export default function HomeScreen() {
     ? `${y}年${parseInt(m)}月${parseInt(d)}日（${dow}）`
     : `${dow}, ${parseInt(m)}/${parseInt(d)}/${y}`
   const styles = makeStyles(colors)
+  const s = t(settings.language)
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -148,28 +144,19 @@ export default function HomeScreen() {
             onPress={handleSave}
             disabled={!canSave}
           >
-            <Text style={styles.saveBtnText}>
-              {homeButtonMode(todayEntry) === 'edit'
-                ? t(settings.language).homeEdit
-                : t(settings.language).homeRecord}
-            </Text>
+            <Text style={styles.saveBtnText}>{s.homeSave}</Text>
           </Pressable>
 
-          {(saved || todayEntry) && (
-            <Pressable style={styles.shareBtn} onPress={handleShare}>
-              <Text style={styles.shareBtnText}>
-                {settings.language === 'ja' ? '📤 SNS にシェア' : '📤 Share'}
-              </Text>
+          {/* 今日の記録がある日だけ出す（S20-8） */}
+          {todayEntry && (
+            <Pressable style={styles.shareBtn} onPress={shareToday}>
+              <Text style={styles.shareBtnText}>{s.shareButton}</Text>
             </Pressable>
           )}
 
           {shouldShowStreak(stats.currentStreak) && (
             <View style={styles.streakBadge}>
-              <Text style={styles.streakText}>
-                {settings.language === 'ja'
-                  ? `🔥 ${stats.currentStreak}日連続記録中！`
-                  : `🔥 ${stats.currentStreak} day streak!`}
-              </Text>
+              <Text style={styles.streakText}>{s.streakLabel(stats.currentStreak)}</Text>
             </View>
           )}
         </ScrollView>

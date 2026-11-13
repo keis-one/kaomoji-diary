@@ -49,10 +49,6 @@ export const calcStreak = (dates: Iterable<string>, today: string): number => {
 /** ホームの連続記録の表示（現行実装: 2日以上のときに表示） */
 export const shouldShowStreak = (streak: number): boolean => streak >= 2
 
-/** ホームのボタン: 今日の記録が無ければ「記録」、あれば「更新（編集）」 */
-export const homeButtonMode = (todayEntry: DiaryEntry | undefined): 'record' | 'edit' =>
-  todayEntry ? 'edit' : 'record'
-
 /**
  * 問いの設定が壊れたときに引き継ぐ問いID（製品仕様 Sprint 19a 追補 A3・オーナー確定 U3）。
  * 記録の日付が最も新しい記録の問いID。同じ日に複数あれば問いIDの文字列の辞書順で先。記録が無ければ null。
