@@ -39,10 +39,10 @@ test('S20-2: カレンダーは表示時に流れの表示月へ合わせ、離�
   const cal = code('app/(tabs)/calendar.tsx')
   assert.match(cal, /useFocusEffect\(/)
   assert.match(cal, /savedFlow\.calendarShown\(\)/)
-  assert.match(cal, /return \(\) => savedFlow\.cancel\(\)/, 'カレンダーから離れたら取り消す')
+  assert.match(cal, /return \(\) => \{\s*savedFlow\.cancel\(\)/, 'カレンダーから離れたら取り消す')
   const openDay = cal.slice(cal.indexOf('const openDay'), cal.indexOf('const openDay') + 400)
   assert.match(openDay, /savedFlow\.cancel\(\)/, '日付のタップで取り消す')
-  const change = cal.slice(cal.indexOf('const changeMonth'), cal.indexOf('const changeMonth') + 600)
+  const change = cal.slice(cal.indexOf('onMonthChangeStart'), cal.indexOf('onMonthChangeStart') + 200)
   assert.match(change, /savedFlow\.cancel\(\)/, '月の切り替えで取り消す')
   assert.match(cal, /decideMonthSwipe\(/)
   assert.match(cal, /lockMonthSwipe\(/)
@@ -127,4 +127,20 @@ test('新しいライブラリを入れていない（ジェスチャー・ア�
   for (const name of ['react-native-reanimated', 'react-native-gesture-handler', 'lottie-react-native']) {
     assert.equal(name in (pkg.dependencies ?? {}), false, name)
   }
+})
+
+test('E20-01: カレンダーの月の切り替え（‹ ›・スワイプの確定・戻り）は createMonthSlider を通す', () => {
+  const cal = code('app/(tabs)/calendar.tsx')
+  assert.match(cal, /createMonthSlider\(/)
+  assert.match(cal, /slider\.finishSwipe\(/)
+  assert.match(cal, /slider\.isBusy\(\)/)
+  assert.match(cal, /slider\.monthShown\(\)/)
+  assert.doesNotMatch(cal, /animating\.current/, '別の止め方を残さない')
+})
+
+test('評価 87 行目: 編集シートで保存した後のスタンプの予約は、月の切り替え・カレンダーから離れたときに取り消す', () => {
+  const cal = code('app/(tabs)/calendar.tsx')
+  const start = cal.slice(cal.indexOf('onMonthChangeStart'), cal.indexOf('onMonthChangeStart') + 200)
+  assert.match(start, /cancelEditStamp\(\)/)
+  assert.match(cal, /return \(\) => \{\s*savedFlow\.cancel\(\)\s*cancelEditStamp\(\)/)
 })

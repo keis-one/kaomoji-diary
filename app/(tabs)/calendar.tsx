@@ -30,6 +30,7 @@ import { dayTapAction } from '@/domain/dayEditor'
 import { submitDayEntry, deleteDayEntry, shouldStampAfterDayAction } from '@/domain/dayActions'
 import { effectsFor, SAVED_FLOW_TIMING } from '@/domain/celebration'
 import { decideMonthSwipe, lockMonthSwipe } from '@/domain/gestures'
+import { createMonthSlider } from '@/domain/monthSlider'
 
 type YearMonth = { year: number; month: number }
 const addMonths = (v: YearMonth, k: number): YearMonth => {
@@ -86,9 +87,12 @@ export default function CalendarScreen() {
     setStamp({ date, key: stampSeq.current, kind: fx.stamp, shake: fx.shake })
   }, [])
   const editStampTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => {
+  // 編集シートで保存した後のスタンプの予約を取り消す（月の切り替え・カレンダーから離れたとき・アンマウント）
+  const cancelEditStamp = useCallback(() => {
     if (editStampTimer.current) clearTimeout(editStampTimer.current)
+    editStampTimer.current = null
   }, [])
+  useEffect(() => cancelEditStamp, [cancelEditStamp])
 
   // ---------- ホームで保存した後の流れ（S20-2） ----------
   useEffect(
@@ -109,60 +113,51 @@ export default function CalendarScreen() {
       const m = savedFlow.calendarShown()
       if (m) setView(m)
       // 別のタブへ移ったら、まだ始まっていないスタンプ・シートを取り消す（戻っても再生しない）
-      return () => savedFlow.cancel()
-    }, []),
+      return () => {
+        savedFlow.cancel()
+        cancelEditStamp()
+      }
+    }, [cancelEditStamp]),
   )
 
   // ---------- 月の切り替え（‹ › ・左右スワイプ。S20-6） ----------
   const translateX = useRef(new Animated.Value(-screenW)).current
-  const animating = useRef(false)
   const widthRef = useRef(screenW)
   widthRef.current = screenW
 
-  // 表示する月・幅が変わったら、真ん中の月が見える位置に戻す（描き直しと同じタイミング）
+  // 動きの間（月を変える・戻る）は次のスワイプ・‹ › を受け付けない（S20-6・E20-01。手順は src/domain/monthSlider.ts）
+  const slider = useMemo(
+    () =>
+      createMonthSlider({
+        animateTo: (target, done) => {
+          const W = widthRef.current
+          const toValue = target === 'next' ? -2 * W : target === 'prev' ? 0 : -W
+          Animated.timing(translateX, {
+            toValue,
+            duration: target === 'center' ? SNAP_BACK_MS : SLIDE_MS,
+            easing: target === 'center' ? Easing.out(Easing.quad) : Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start(({ finished }) => done(finished))
+        },
+        commitMonth: (dir) => setView((v) => addMonths(v, dir)),
+        // 月を切り替えたら、保存した後のまだ始まっていない演出と、編集シートの後のスタンプの予約を取り消す
+        onMonthChangeStart: () => {
+          savedFlow.cancel()
+          cancelEditStamp()
+        },
+      }),
+    [translateX, cancelEditStamp],
+  )
+
+  // 表示する月・幅が変わったら、真ん中の月が見える位置に戻す（描き直しと同じタイミング）。ここで操作をまた受け付ける
   // 月が変わるとマスを作り直すので、押し終わったスタンプを消しておく（戻ってきたときに押し直さない）
   useLayoutEffect(() => {
     translateX.setValue(-screenW)
-    animating.current = false
+    slider.monthShown()
     setStamp(null)
-  }, [view, screenW, translateX])
-
-  const changeMonth = useCallback(
-    (dir: 1 | -1) => {
-      if (animating.current) return
-      savedFlow.cancel() // 月を切り替えたら、保存した後のまだ始まっていない演出を取り消す
-      animating.current = true
-      const W = widthRef.current
-      Animated.timing(translateX, {
-        toValue: dir > 0 ? -2 * W : 0,
-        duration: SLIDE_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) setView((v) => addMonths(v, dir))
-        else animating.current = false
-      })
-    },
-    [translateX],
-  )
-  const changeMonthRef = useRef(changeMonth)
-  changeMonthRef.current = changeMonth
+  }, [view, screenW, translateX, slider])
 
   const swipe = useRef<{ lock: 'horizontal' | 'vertical' | null }>({ lock: null })
-  const finishSwipe = (decision: 'next' | 'prev' | 'stay') => {
-    if (decision === 'stay') {
-      Animated.timing(translateX, {
-        toValue: -widthRef.current,
-        duration: SNAP_BACK_MS,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }).start()
-      return
-    }
-    changeMonthRef.current(decision === 'next' ? 1 : -1)
-  }
-  const finishSwipeRef = useRef(finishSwipe)
-  finishSwipeRef.current = finishSwipe
 
   const pan = useMemo(
     () =>
@@ -173,7 +168,7 @@ export default function CalendarScreen() {
           return false
         },
         onMoveShouldSetPanResponderCapture: (_, g) => {
-          if (animating.current) return false
+          if (slider.isBusy()) return false
           if (swipe.current.lock === null) swipe.current.lock = lockMonthSwipe(g.dx, g.dy)
           return swipe.current.lock === 'horizontal'
         },
@@ -182,13 +177,13 @@ export default function CalendarScreen() {
           translateX.setValue(-widthRef.current + g.dx)
         },
         onPanResponderRelease: (_, g) => {
-          finishSwipeRef.current(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: false }))
+          slider.finishSwipe(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: false }))
         },
         onPanResponderTerminate: (_, g) => {
-          finishSwipeRef.current(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: true }))
+          slider.finishSwipe(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: true }))
         },
       }),
-    [translateX],
+    [translateX, slider],
   )
 
   // ---------- 日のタップ・編集シート ----------
@@ -227,13 +222,13 @@ export default function CalendarScreen() {
     <SafeAreaView style={styles.safe}>
       <ScrollView>
         <View style={styles.header}>
-          <Pressable onPress={() => changeMonth(-1)} style={styles.navBtn} accessibilityLabel={settings.language === 'ja' ? '前の月' : 'Previous month'}>
+          <Pressable onPress={() => slider.change(-1)} style={styles.navBtn} accessibilityLabel={settings.language === 'ja' ? '前の月' : 'Previous month'}>
             <Text style={styles.navText}>‹</Text>
           </Pressable>
           <Text style={styles.monthLabel}>
             {formatMonthHeader(new Date(view.year, view.month - 1), settings.language)}
           </Text>
-          <Pressable onPress={() => changeMonth(1)} style={styles.navBtn} accessibilityLabel={settings.language === 'ja' ? '次の月' : 'Next month'}>
+          <Pressable onPress={() => slider.change(1)} style={styles.navBtn} accessibilityLabel={settings.language === 'ja' ? '次の月' : 'Next month'}>
             <Text style={styles.navText}>›</Text>
           </Pressable>
         </View>
