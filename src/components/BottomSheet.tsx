@@ -29,11 +29,14 @@ import {
   View,
   useWindowDimensions,
   type GestureResponderEvent,
+  type PanResponderGestureState,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { canStartSheetDrag, decideSheetDismiss, lockSheetDrag } from '@/domain/gestures'
+import { sheetBottomPadding } from '@/domain/sheetLayout'
 
 export interface SheetApi {
   /** 一言の入力欄の onTouchStart に渡す（入力欄の中から始めた操作ではシートを動かさない） */
@@ -61,6 +64,8 @@ const CLOSE_MS = 220
 const BACK_MS = 200
 const AT_TOP = 0.5
 const SAME_TOUCH_MS = 32
+/** 中身の下の余白（ナビゲーションバーの分は別に足す） */
+const CONTENT_BOTTOM = 36
 
 export const BottomSheet: React.FC<Props> = ({
   visible,
@@ -73,6 +78,8 @@ export const BottomSheet: React.FC<Props> = ({
   children,
 }) => {
   const { height: screenH } = useWindowDimensions()
+  // Android（edge-to-edge）では Modal の中身がナビゲーションバーの下まで広がるので、その分を下に空ける（実機確認 D2）
+  const insets = useSafeAreaInsets()
   const [rendered, setRendered] = useState(visible)
   const [keyboardOffset, setKeyboardOffset] = useState(0)
   const [sheetH, setSheetH] = useState(0)
@@ -149,79 +156,106 @@ export const BottomSheet: React.FC<Props> = ({
     Animated.timing(ty, { toValue: 0, duration: BACK_MS, easing: Easing.out(Easing.quad), useNativeDriver: true }).start()
   }, [ty])
 
-  const pan = useMemo(
+  // 指を離したとき・取り消されたとき（つまみの帯・中身の両方で共通）
+  const releaseClose = (g: PanResponderGestureState) => {
+    const L = live.current
+    const decision = decideSheetDismiss({ dy: g.dy, vy: g.vy, height: L.sheetH || L.screenH, cancelled: false })
+    if (decision === 'close') {
+      Keyboard.dismiss()
+      L.onDragDismiss()
+    } else {
+      backToOpen()
+    }
+  }
+  const releaseCloseRef = useRef(releaseClose)
+  releaseCloseRef.current = releaseClose
+
+  // つまみの帯（中身のスクロールの外）: 指を置いた時点で下スワイプを受け持つ。中にボタン・入力欄・スクロールが無いので、
+  // 動きの取り合い（move の取り込み）に頼らずに確実に受け持てる（実機確認 D3）
+  const handlePan = useMemo(
     () =>
       PanResponder.create({
-        // 操作の始まり（指を置いた時点ではシートは動かさず、中のボタン・入力欄に任せる）。開始時点の状態を記録する
-        onStartShouldSetPanResponderCapture: (e) => {
-          const st = gesture.current
-          st.atTopAtStart = scrollY.current <= AT_TOP
-          st.startedAt = e.nativeEvent.timestamp
-          st.lock = null
-          return false
-        },
-        onMoveShouldSetPanResponderCapture: (_, g) => {
-          const st = gesture.current
-          // 同じタッチの知らせは同じ時刻を持つ。念のため少しのずれは同じタッチとみなす（前の操作の印は数百 ms 以上前）
-          const startedInInput = Math.abs(st.inputTouchedAt - st.startedAt) <= SAME_TOUCH_MS
-          if (st.lock !== null) return st.lock !== 'none'
-          const dir = lockSheetDrag(g.dx, g.dy)
-          if (dir === null) return false
-          const L = live.current
-          if (dir === 'down') {
-            const ok = canStartSheetDrag({
-              confirming: L.dragBlocked,
-              busy: false,
-              startedInInput,
-              scrollAtTopAtStart: st.atTopAtStart,
-            })
-            st.lock = ok ? 'close' : 'none'
-          } else {
-            // 一番上で止めている中身を、上へ動かしてスクロールさせる
-            const upFromTop = g.dy < 0 && Math.abs(g.dy) > Math.abs(g.dx)
-            st.lock =
-              upFromTop && L.scrollable && !L.nativeScroll && st.atTopAtStart && !startedInInput && !L.dragBlocked
-                ? 'scroll'
-                : 'none'
-            st.scrollStart = scrollY.current
-          }
-          return st.lock !== 'none'
-        },
+        onStartShouldSetPanResponder: () => !live.current.dragBlocked,
+        onMoveShouldSetPanResponder: () => !live.current.dragBlocked,
         onPanResponderTerminationRequest: () => false,
         onPanResponderMove: (_, g) => {
-          const st = gesture.current
-          if (st.lock === 'close') {
-            ty.setValue(Math.max(0, g.dy))
-          } else if (st.lock === 'scroll') {
-            const y = Math.min(live.current.maxScroll, Math.max(0, st.scrollStart - g.dy))
-            scrollRef.current?.scrollTo({ y, animated: false })
-          }
+          ty.setValue(Math.max(0, g.dy))
         },
-        onPanResponderRelease: (_, g) => {
-          const st = gesture.current
-          const L = live.current
-          if (st.lock === 'close') {
-            const decision = decideSheetDismiss({ dy: g.dy, vy: g.vy, height: L.sheetH || L.screenH, cancelled: false })
-            if (decision === 'close') {
-              Keyboard.dismiss()
-              L.onDragDismiss()
-            } else {
-              backToOpen()
-            }
-          } else if (st.lock === 'scroll') {
-            // 指を離した後の慣性（簡易）。一番上から離れたら ScrollView のスクロールに戻す
-            const target = Math.min(L.maxScroll, Math.max(0, st.scrollStart - g.dy - g.vy * 150))
-            scrollRef.current?.scrollTo({ y: target, animated: true })
-            if (target > AT_TOP) setNativeScroll(true)
-          }
-        },
-        onPanResponderTerminate: () => {
-          // 操作がシステムに取り消されたときは元の位置に戻す（閉じない）
-          if (gesture.current.lock === 'close') backToOpen()
-        },
+        onPanResponderRelease: (_, g) => releaseCloseRef.current(g),
+        onPanResponderTerminate: () => backToOpen(),
       }),
     [ty, backToOpen],
   )
+
+  // 中身の部分: 指を置いた時点ではボタン・入力欄に任せ、下へ動いたときに受け持つ
+  const pan = useMemo(() => {
+    const shouldClaimContentMove = (_: GestureResponderEvent, g: PanResponderGestureState): boolean => {
+      const st = gesture.current
+      // 同じタッチの知らせは同じ時刻を持つ。念のため少しのずれは同じタッチとみなす（前の操作の印は数百 ms 以上前）
+      const startedInInput = Math.abs(st.inputTouchedAt - st.startedAt) <= SAME_TOUCH_MS
+      if (st.lock !== null) return st.lock !== 'none'
+      const dir = lockSheetDrag(g.dx, g.dy)
+      if (dir === null) return false
+      const L = live.current
+      if (dir === 'down') {
+        const ok = canStartSheetDrag({
+          confirming: L.dragBlocked,
+          busy: false,
+          startedInInput,
+          scrollAtTopAtStart: st.atTopAtStart,
+        })
+        st.lock = ok ? 'close' : 'none'
+      } else {
+        // 一番上で止めている中身を、上へ動かしてスクロールさせる
+        const upFromTop = g.dy < 0 && Math.abs(g.dy) > Math.abs(g.dx)
+        st.lock =
+          upFromTop && L.scrollable && !L.nativeScroll && st.atTopAtStart && !startedInInput && !L.dragBlocked
+            ? 'scroll'
+            : 'none'
+        st.scrollStart = scrollY.current
+      }
+      return st.lock !== 'none'
+    }
+    return PanResponder.create({
+      // 操作の始まり（指を置いた時点ではシートは動かさず、中のボタン・入力欄に任せる）。開始時点の状態を記録する
+      onStartShouldSetPanResponderCapture: (e) => {
+        const st = gesture.current
+        st.atTopAtStart = scrollY.current <= AT_TOP
+        st.startedAt = e.nativeEvent.timestamp
+        st.lock = null
+        return false
+      },
+      // 取り込み（capture）と通常（bubble）の両方で同じ判定をする（どちらかの経路で受け持てるように）
+      onMoveShouldSetPanResponderCapture: shouldClaimContentMove,
+      onMoveShouldSetPanResponder: shouldClaimContentMove,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, g) => {
+        const st = gesture.current
+        if (st.lock === 'close') {
+          ty.setValue(Math.max(0, g.dy))
+        } else if (st.lock === 'scroll') {
+          const y = Math.min(live.current.maxScroll, Math.max(0, st.scrollStart - g.dy))
+          scrollRef.current?.scrollTo({ y, animated: false })
+        }
+      },
+      onPanResponderRelease: (_, g) => {
+        const st = gesture.current
+        const L = live.current
+        if (st.lock === 'close') {
+          releaseCloseRef.current(g)
+        } else if (st.lock === 'scroll') {
+          // 指を離した後の慣性（簡易）。一番上から離れたら ScrollView のスクロールに戻す
+          const target = Math.min(L.maxScroll, Math.max(0, st.scrollStart - g.dy - g.vy * 150))
+          scrollRef.current?.scrollTo({ y: target, animated: true })
+          if (target > AT_TOP) setNativeScroll(true)
+        }
+      },
+      onPanResponderTerminate: () => {
+        // 操作がシステムに取り消されたときは元の位置に戻す（閉じない）
+        if (gesture.current.lock === 'close') backToOpen()
+      },
+    })
+  }, [ty, backToOpen])
 
   // 入力欄に指が触れた（この操作の始まりの時刻と同じなら、入力欄の中から始めた操作）
   const markInputTouch = useCallback((e: GestureResponderEvent) => {
@@ -256,10 +290,16 @@ export const BottomSheet: React.FC<Props> = ({
             onLayout={(e: LayoutChangeEvent) => setSheetH(e.nativeEvent.layout.height)}
             {...pan.panHandlers}
           >
+            <View style={styles.handleZone} {...handlePan.panHandlers}>
+              <View style={styles.handle} />
+            </View>
             <ScrollView
               ref={scrollRef}
               style={styles.scroll}
-              contentContainerStyle={styles.content}
+              contentContainerStyle={[
+                styles.content,
+                { paddingBottom: sheetBottomPadding({ base: CONTENT_BOTTOM, insetBottom: insets.bottom, keyboardOffset }) },
+              ]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
               scrollEnabled={scrollable && nativeScroll}
@@ -272,7 +312,6 @@ export const BottomSheet: React.FC<Props> = ({
               overScrollMode="never"
               bounces={false}
             >
-              <View style={styles.handle} />
               {children({ markInputTouch })}
             </ScrollView>
             {overlay}
@@ -290,6 +329,8 @@ const styles = StyleSheet.create({
   wrapper: { flex: 1, justifyContent: 'flex-end', paddingTop: 40 },
   sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, flexShrink: 1, overflow: 'hidden' },
   scroll: { flexGrow: 0, flexShrink: 1 },
-  content: { padding: 20, paddingBottom: 36, gap: 12 },
-  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#ddd', alignSelf: 'center', marginBottom: 8 },
+  content: { paddingHorizontal: 20, paddingTop: 4, gap: 12 },
+  // つまみの帯（指で掴みやすいよう高さを取る）
+  handleZone: { alignItems: 'center', justifyContent: 'center', paddingTop: 12, paddingBottom: 12 },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#ddd' },
 })

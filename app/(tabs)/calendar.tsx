@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Animated,
   Easing,
@@ -31,12 +31,8 @@ import { submitDayEntry, deleteDayEntry, shouldStampAfterDayAction } from '@/dom
 import { effectsFor, SAVED_FLOW_TIMING } from '@/domain/celebration'
 import { decideMonthSwipe, lockMonthSwipe } from '@/domain/gestures'
 import { createMonthSlider } from '@/domain/monthSlider'
+import { initialMonthTrack, jumpMonthTrack, shiftMonthTrack, trackPaneMonths, type MonthTrack } from '@/domain/monthTrack'
 
-type YearMonth = { year: number; month: number }
-const addMonths = (v: YearMonth, k: number): YearMonth => {
-  const t = v.year * 12 + (v.month - 1) + k
-  return { year: Math.floor(t / 12), month: (t % 12) + 1 }
-}
 const EMPTY_SET = { 1: '', 2: '', 3: '', 4: '', 5: '' }
 const SLIDE_MS = 240
 const SNAP_BACK_MS = 200
@@ -61,9 +57,10 @@ export default function CalendarScreen() {
   const getEntry = useCallback((date: string) => entryMap[`${questionId}:${date}`], [entryMap, questionId])
   const kaomojiSet = activeQuestion?.kaomojiSet ?? settings.questions[0]?.kaomojiSet ?? EMPTY_SET
 
-  const [view, setView] = useState<YearMonth>(() => {
+  // 表示する月と、前・表示中・次の月を並べた面（月が変わるたびに作り直す。src/domain/monthTrack.ts）
+  const [track, setTrack] = useState<MonthTrack>(() => {
     const d = new Date()
-    return { year: d.getFullYear(), month: d.getMonth() + 1 }
+    return initialMonthTrack({ year: d.getFullYear(), month: d.getMonth() + 1 })
   })
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [popupVisible, setPopupVisible] = useState(false)
@@ -111,7 +108,10 @@ export default function CalendarScreen() {
     useCallback(() => {
       // ホームで保存してきたときは、前に見ていた月に関係なく今日の月を出す
       const m = savedFlow.calendarShown()
-      if (m) setView(m)
+      if (m) {
+        setTrack(jumpMonthTrack(m))
+        setStamp(null)
+      }
       // 別のタブへ移ったら、まだ始まっていないスタンプ・シートを取り消す（戻っても再生しない）
       return () => {
         savedFlow.cancel()
@@ -121,7 +121,16 @@ export default function CalendarScreen() {
   )
 
   // ---------- 月の切り替え（‹ › ・左右スワイプ。S20-6） ----------
-  const translateX = useRef(new Animated.Value(-screenW)).current
+  // 面ごとに、真ん中の月が見える位置から始まる新しい値を使う。ネイティブで動かした値を setValue で真ん中へ戻すと
+  // React のシャドウツリーに書かれず、見た目と押した場所の判定がずれるため（実機確認の不具合 D1）
+  const translateX = useMemo(
+    () => new Animated.Value(track.startOffset(screenW)),
+    // 面（track.key）・幅が変わったときだけ作る
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [track.key, screenW],
+  )
+  const translateXRef = useRef(translateX)
+  translateXRef.current = translateX
   const widthRef = useRef(screenW)
   widthRef.current = screenW
 
@@ -132,30 +141,30 @@ export default function CalendarScreen() {
         animateTo: (target, done) => {
           const W = widthRef.current
           const toValue = target === 'next' ? -2 * W : target === 'prev' ? 0 : -W
-          Animated.timing(translateX, {
+          Animated.timing(translateXRef.current, {
             toValue,
             duration: target === 'center' ? SNAP_BACK_MS : SLIDE_MS,
             easing: target === 'center' ? Easing.out(Easing.quad) : Easing.out(Easing.cubic),
             useNativeDriver: true,
           }).start(({ finished }) => done(finished))
         },
-        commitMonth: (dir) => setView((v) => addMonths(v, dir)),
+        commitMonth: (dir) => {
+          setTrack((t) => shiftMonthTrack(t, dir))
+          setStamp(null) // 月が変わるとマスを作り直すので、押し終わったスタンプを消しておく（戻ってきたときに押し直さない）
+        },
         // 月を切り替えたら、保存した後のまだ始まっていない演出と、編集シートの後のスタンプの予約を取り消す
         onMonthChangeStart: () => {
           savedFlow.cancel()
           cancelEditStamp()
         },
       }),
-    [translateX, cancelEditStamp],
+    [cancelEditStamp],
   )
 
-  // 表示する月・幅が変わったら、真ん中の月が見える位置に戻す（描き直しと同じタイミング）。ここで操作をまた受け付ける
-  // 月が変わるとマスを作り直すので、押し終わったスタンプを消しておく（戻ってきたときに押し直さない）
-  useLayoutEffect(() => {
-    translateX.setValue(-screenW)
+  // 新しい面が描かれたら、また操作を受け付ける
+  useEffect(() => {
     slider.monthShown()
-    setStamp(null)
-  }, [view, screenW, translateX, slider])
+  }, [track.key, slider])
 
   const swipe = useRef<{ lock: 'horizontal' | 'vertical' | null }>({ lock: null })
 
@@ -174,7 +183,7 @@ export default function CalendarScreen() {
         },
         onPanResponderTerminationRequest: () => false,
         onPanResponderMove: (_, g) => {
-          translateX.setValue(-widthRef.current + g.dx)
+          translateXRef.current.setValue(-widthRef.current + g.dx)
         },
         onPanResponderRelease: (_, g) => {
           slider.finishSwipe(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: false }))
@@ -183,7 +192,7 @@ export default function CalendarScreen() {
           slider.finishSwipe(decideMonthSwipe({ dx: g.dx, vx: g.vx, width: widthRef.current, cancelled: true }))
         },
       }),
-    [translateX, slider],
+    [slider],
   )
 
   // ---------- 日のタップ・編集シート ----------
@@ -226,7 +235,7 @@ export default function CalendarScreen() {
             <Text style={styles.navText}>‹</Text>
           </Pressable>
           <Text style={styles.monthLabel}>
-            {formatMonthHeader(new Date(view.year, view.month - 1), settings.language)}
+            {formatMonthHeader(new Date(track.year, track.month - 1), settings.language)}
           </Text>
           <Pressable onPress={() => slider.change(1)} style={styles.navBtn} accessibilityLabel={settings.language === 'ja' ? '次の月' : 'Next month'}>
             <Text style={styles.navText}>›</Text>
@@ -241,9 +250,9 @@ export default function CalendarScreen() {
 
         {/* 前の月・表示中の月・次の月を横に並べ、指の動きに合わせて動かす */}
         <View style={styles.swipeArea} {...pan.panHandlers}>
-          <Animated.View style={[styles.track, { width: screenW * 3, transform: [{ translateX }] }]}>
-            {[-1, 0, 1].map((k) => {
-              const ym = addMonths(view, k)
+          <Animated.View key={track.key} style={[styles.track, { width: screenW * 3, transform: [{ translateX }] }]}>
+            {trackPaneMonths(track).map((ym, i) => {
+              const k = i - 1
               return (
                 <View key={k} style={{ width: screenW }}>
                   <MonthGrid
